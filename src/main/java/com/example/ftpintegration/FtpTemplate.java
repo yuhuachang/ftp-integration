@@ -1,4 +1,4 @@
-package com.example.ftpintegration.inbound;
+package com.example.ftpintegration;
 
 import java.io.IOException;
 
@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class FtpTemplate {
+
     private static final Logger log = LoggerFactory.getLogger(FtpTemplate.class);
 
     private String host;
@@ -16,14 +17,6 @@ public class FtpTemplate {
     private String username;
     private String password;
     private FTPClient client;
-
-    public static interface FtpOperation {
-        void execute(FTPClient client) throws IOException;
-    }
-
-    public static enum ServerType {
-        WINDOWS, UNIX
-    }
 
     public FtpTemplate(FTPClient client) {
         this.host = "mock-host";
@@ -33,7 +26,8 @@ public class FtpTemplate {
         this.client = client;
     }
 
-    public FtpTemplate(String host, int port, String username, String password, ServerType serverType, int timeout) {
+    public FtpTemplate(String host, int port, String username, String password, String serverType,
+            int timeout) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -43,17 +37,8 @@ public class FtpTemplate {
         client = new FTPClient();
 
         // Set server type.
-        FTPClientConfig config = null;
-        switch (serverType) {
-        case WINDOWS:
-            config = new FTPClientConfig(FTPClientConfig.SYST_NT);
-            break;
-        case UNIX:
-            config = new FTPClientConfig(FTPClientConfig.SYST_UNIX);
-            break;
-        }
+        FTPClientConfig config = new FTPClientConfig(serverType);
         client.configure(config);
-
         client.setConnectTimeout(timeout);
         client.setControlKeepAliveReplyTimeout(timeout);
         client.setControlKeepAliveTimeout(timeout);
@@ -61,7 +46,7 @@ public class FtpTemplate {
         client.setDefaultTimeout(timeout);
     }
 
-    public void execute(FtpOperation operation) {
+    public void execute(FtpOperationFlow operation) {
         try {
             client.connect(host, port);
 
@@ -77,8 +62,10 @@ public class FtpTemplate {
                     try {
                         // execute operation
                         operation.execute(client);
-                    } catch (Exception e) {
-                        log.warn("error while executing ftp operation", e);
+                    } catch (Throwable e) {
+                        // operation should handle all exception by itself.
+                        // the template is not able to handle errors in business flow.
+                        log.warn("Detected an unhandled exception from ftp operation flow.", e);
                     }
 
                     // logout
@@ -106,8 +93,8 @@ public class FtpTemplate {
                 try {
                     client.disconnect();
                 } catch (IOException e) {
+                    log.warn("Error on closing FTP connection.", e);
                     // nothing we can do here...
-                    log.warn("Error on close FTP connection.", e);
                 }
             }
         }
