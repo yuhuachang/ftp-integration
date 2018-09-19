@@ -1,7 +1,5 @@
 package com.example.ftpintegration;
 
-import java.nio.charset.StandardCharsets;
-
 import org.apache.commons.net.ftp.FTPClientConfig;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -14,8 +12,8 @@ public class FtpIntegrationApplication {
         new SpringApplicationBuilder(FtpIntegrationApplication.class).web(WebApplicationType.NONE).run(args);
 
         InboundProcessingFlow operation = new InboundProcessingFlow("/input", "/archive",
-                new TextFileProcessor(StandardCharsets.UTF_16LE, line -> {
-                    System.err.println(line);
+                new TextFileProcessor((lineNumber, line) -> {
+                    System.err.println("line " + lineNumber + ": " + line + " (" + line.length() + ")");
                 }));
         operation.setSuccessCallback(message -> {
             System.err.println(message + " success");

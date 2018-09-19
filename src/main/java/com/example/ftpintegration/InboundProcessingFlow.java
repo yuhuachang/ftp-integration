@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
-import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,11 +24,13 @@ public class InboundProcessingFlow implements FtpOperationFlow {
     }
 
     public InboundProcessingFlow(String inputPath, String archivePath, FileProcessor processor) {
-        Assert.assertNotNull(processor);
+        processor.getClass();
         this.processor = processor;
         this.inputPath = inputPath == null ? "/" : inputPath;
         this.archivePath = archivePath == null ? "/" : archivePath;
-        Assert.assertFalse("Input path and archive path cannot be the same.", inputPath.equals(archivePath));
+        if (inputPath.equals(archivePath)) {
+            throw new RuntimeException("Input path and archive path cannot be the same.");
+        }
         isDryRun = false;
     }
 
