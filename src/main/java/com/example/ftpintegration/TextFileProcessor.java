@@ -25,7 +25,7 @@ public class TextFileProcessor implements FileProcessor {
     }
 
     @Override
-    public void processFile(byte[] bytes) {
+    public void processFile(byte[] bytes) throws UnsupportedEncodingException {
 
         String charsetName;
         if (charset == null) {
@@ -35,26 +35,32 @@ public class TextFileProcessor implements FileProcessor {
             CharsetDetector detector = new CharsetDetector();
             detector.setText(bytes);
             CharsetMatch matchedCharset = detector.detect();
-            
-            log.info("Matched charset is {}", matchedCharset.getName());
+            if (log.isDebugEnabled()) {
+                log.debug("Matched charset is {}", matchedCharset.getName());
+            }
             charsetName = matchedCharset.getName();
         } else {
             // Use provided charset
             charsetName = charset.name();
         }
 
-        try {
-            String content = new String(bytes, charsetName);
-            int lineNumber = 1;
-            for (String line : content.split("[\\r\\n]")) {
-                if (line.length() == 0) {
-                    continue;
-                }
-                processor.process(lineNumber, line);
-                lineNumber++;
+        log.info("Use charset {}", charsetName);
+        String content = new String(bytes, charsetName);
+        int lineNumber = 1;
+        for (String line : content.split("[\\r\\n]")) {
+            if (line.length() == 0) {
+                continue;
             }
-        } catch (UnsupportedEncodingException e) {
-            throw new RuntimeException("Unable to read file.", e);
+            if (log.isDebugEnabled()) {
+                log.debug("line {}: {}", lineNumber, line);
+            }
+            try {
+                processor.process(lineNumber, line);
+            } catch (Throwable e) {
+                String message = String.format("There is an error at line %d. %s", lineNumber, e.getMessage());
+                throw new BusinessException(message, e);
+            }
+            lineNumber++;
         }
     }
 }

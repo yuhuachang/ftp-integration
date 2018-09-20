@@ -16,13 +16,16 @@ public class FtpTemplate {
     private int port;
     private String username;
     private String password;
+    private boolean isPassiveMode;
     private FTPClient client;
+    private ErrorCallback technicalErrorCallback;
 
     public FtpTemplate(FTPClient client) {
         this.host = "mock-host";
         this.port = 21;
         this.username = "mock-user";
         this.password = "mock-password";
+        this.isPassiveMode = true;
         this.client = client;
     }
 
@@ -44,6 +47,12 @@ public class FtpTemplate {
         client.setControlKeepAliveTimeout(timeout);
         client.setDataTimeout(timeout);
         client.setDefaultTimeout(timeout);
+        
+       
+    }
+
+    public void setTechnicalErrorCallback(ErrorCallback technicalErrorCallback) {
+        this.technicalErrorCallback = technicalErrorCallback;
     }
 
     public void execute(FtpOperationFlow operation) {
@@ -53,10 +62,9 @@ public class FtpTemplate {
             int reply = client.getReplyCode();
             if (FTPReply.isPositiveCompletion(reply)) {
 
-                // TODO: do we need to test passive FTP?
-                // enter passive mode
-                // ftp.enterLocalPassiveMode();
-                // ftp.enterRemotePassiveMode();
+                // Enter passive mode
+                client.enterLocalPassiveMode();
+                client.enterRemotePassiveMode();
 
                 if (client.login(username, password)) {
                     try {
@@ -65,7 +73,11 @@ public class FtpTemplate {
                     } catch (Throwable e) {
                         // operation should handle all exception by itself.
                         // the template is not able to handle errors in business flow.
-                        log.warn("Detected an unhandled exception from ftp operation flow.", e);
+                        String message = "Detected a technical problem in the ftp operation flow.";
+                        log.error(message, e);
+                        if (technicalErrorCallback != null) {
+                            technicalErrorCallback.callback(message, e);
+                        }
                     }
 
                     // logout
@@ -74,17 +86,30 @@ public class FtpTemplate {
                             log.debug("Logout FTP");
                         }
                     } else {
-                        log.info("Failed to logout FTP");
+                        log.warn("Failed to logout FTP");
                     }
                 } else {
                     // login failed.
-                    log.warn("Failed to login FTP server {} with {}/{}.", host, username, password);
+                    String message = String.format("Failed to login FTP server %s with %s/%s.", host, username,
+                            password);
+                    log.error(message);
+                    if (technicalErrorCallback != null) {
+                        technicalErrorCallback.callback(message, null);
+                    }
                 }
             } else {
-                log.warn("Failed to connect FTP server {}.", host);
+                String message = String.format("Failed to connect FTP server %s", host);
+                log.error(message);
+                if (technicalErrorCallback != null) {
+                    technicalErrorCallback.callback(message, null);
+                }
             }
-        } catch (Exception e) {
-            log.warn("Error on open FTP connection.", e);
+        } catch (Throwable e) {
+            String message = "Error on open FTP connection.";
+            log.error(message, e);
+            if (technicalErrorCallback != null) {
+                technicalErrorCallback.callback(message, e);
+            }
         } finally {
             if (client.isConnected()) {
                 if (log.isDebugEnabled()) {

@@ -1,6 +1,6 @@
 package com.example.ftpintegration;
 
-public interface ActionCallback {
+public interface SuccessCallback {
 
     void callback(String message);
 }

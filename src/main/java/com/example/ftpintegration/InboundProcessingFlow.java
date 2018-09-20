@@ -16,8 +16,9 @@ public class InboundProcessingFlow implements FtpOperationFlow {
     private final String inputPath;
     private final String archivePath;
     private boolean isDryRun;
-    private ActionCallback successCallback;
-    private ActionCallback errorCallback;
+    private SuccessCallback successCallback;
+    private ErrorCallback errorCallback;
+    private ErrorCallback technicalErrorCallback;
 
     public InboundProcessingFlow(String inputPath, FileProcessor processor) {
         this(inputPath, null, processor);
@@ -31,7 +32,7 @@ public class InboundProcessingFlow implements FtpOperationFlow {
         if (inputPath.equals(archivePath)) {
             throw new RuntimeException("Input path and archive path cannot be the same.");
         }
-        isDryRun = false;
+        isDryRun = true;
     }
 
     public boolean isDryRun() {
@@ -42,12 +43,16 @@ public class InboundProcessingFlow implements FtpOperationFlow {
         this.isDryRun = isDryRun;
     }
 
-    public void setSuccessCallback(ActionCallback successCallback) {
+    public void setSuccessCallback(SuccessCallback successCallback) {
         this.successCallback = successCallback;
     }
 
-    public void setErrorCallback(ActionCallback errorCallback) {
+    public void setErrorCallback(ErrorCallback errorCallback) {
         this.errorCallback = errorCallback;
+    }
+
+    public void setTechnicalErrorCallback(ErrorCallback technicalErrorCallback) {
+        this.technicalErrorCallback = technicalErrorCallback;
     }
 
     @Override
@@ -59,12 +64,17 @@ public class InboundProcessingFlow implements FtpOperationFlow {
         try {
             files = client.listFiles(inputPath);
         } catch (Exception e) {
-            log.warn("Error on list files.", e);
+            throw new TechnicalException("Error occur while listing input directory: " + inputPath, e);
+        }
+
+        if (files == null) {
+            // This is strange. It can be empty but shouldn't be null.
+            log.warn("Input directory is null.");
             return;
         }
 
-        if (files == null || files.length == 0) {
-            log.warn("Input directory is empty.");
+        if (files.length == 0) {
+            log.info("Input directory is empty.");
             return;
         }
 
@@ -88,62 +98,97 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                     if (client.retrieveFile(inputFileName, outputStream)) {
                         bytes = outputStream.toByteArray();
                     } else {
-                        throw new RuntimeException("Not successfully completed reading file: " + inputFileName);
+                        String message = String.format("Not successfully completed reading file: %s", inputFileName);
+                        log.error(message);
+                        if (technicalErrorCallback != null) {
+                            technicalErrorCallback.callback(message, null);
+                        }
+                        continue;
                     }
                 }
 
                 if (bytes == null) {
-                    throw new RuntimeException("Nothing read from file: " + inputFileName);
+                    // It can be empty but shouldn't be null.
+                    String message = String.format("Nothing read from file: %s. EDI content may be wrong.", inputFileName);
+                    log.warn(message);
+                    if (technicalErrorCallback != null) {
+                        technicalErrorCallback.callback(message, null);
+                    }
+                    continue;
                 } else {
                     log.info("Read {} bytes from file: {}", bytes.length, inputFileName);
 
-                    // Processor should throw exception if something goes wrong.
-                    processor.processFile(bytes);
-                }
-
-                // Stop here if is for testing.
-                if (isDryRun) {
-                    log.info("Operating in test mode.  Nothing will be changed on FTP.");
-                    continue;
+                    // The core file processing is here.
+                    try {
+                        processor.processFile(bytes);
+                        log.info("Complete processing file {}", inputFileName);
+                    } catch (BusinessException e) {
+                        // Errors related to business reason. For example, file content validation failure.
+                        // Usually need to contact business users.
+                        log.error("Processing file {} failed with error.", inputFileName, e);
+                        if (errorCallback != null) {
+                            errorCallback.callback(e.getMessage(), e);
+                        }
+                        continue;
+                    }
                 }
 
                 // If nothing wrong, we start to commit the transaction by
                 // moving file to archive folder.
                 String archiveFileName = String.format("%s/%s", archivePath, file.getName());
                 log.info("Archive file {}", archiveFileName);
-                boolean uploadResult = false;
-                try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
-                    uploadResult = client.storeFile(archiveFileName, inputStream);
-                }
-
-                if (uploadResult) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Upload success.");
-                    }
+                if (isDryRun) {
+                    log.info("Operating in test mode.  Nothing will be changed on FTP.");
                 } else {
-                    throw new RuntimeException("Upload file " + archiveFileName + " failed.");
+                    try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
+                        if (client.storeFile(archiveFileName, inputStream)) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Upload success.");
+                            }
+                        } else {
+                            String message = String.format("Upload file %s failed.", archiveFileName);
+                            log.error(message);
+                            if (technicalErrorCallback != null) {
+                                technicalErrorCallback.callback(message, null);
+                            }
+                            continue;
+                        }
+                    }
                 }
 
                 // Finally, we delete the input file.
                 log.info("Delete input file: {}", inputFileName);
-                if (client.deleteFile(inputFileName)) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Delete success.");
-                    }
+                if (isDryRun) {
+                    log.info("Operating in test mode.  Nothing will be changed on FTP.");
                 } else {
-                    throw new RuntimeException("Delete file " + inputFileName + " failed.");
+                    if (client.deleteFile(inputFileName)) {
+                        if (log.isDebugEnabled()) {
+                            log.debug("Delete success.");
+                        }
+                    } else {
+                        String message = String.format("Delete file %s failed.", inputFileName);
+                        log.error(message);
+                        if (technicalErrorCallback != null) {
+                            technicalErrorCallback.callback(message, null);
+                        }
+                        continue;
+                    }
                 }
 
                 // Send success callback
                 if (successCallback != null) {
-                    successCallback.callback("Processing input file success.");
+                    successCallback.callback("Processing input file " + inputFileName + " success.");
                 }
             } catch (Throwable e) {
-                log.error("Processing input file failed.", e);
-
-                // Send error callback
+                // Technical errors, for example, not able to extract the file content.
+                // Usually need to contact business users and technical people.
+                String message = "There is a technical problem processing the input file. Processing input file failed.";
+                log.error(message, e);
                 if (errorCallback != null) {
-                    errorCallback.callback("Processing input file failed.");
+                    errorCallback.callback(message, e);
+                }
+                if (technicalErrorCallback != null) {
+                    technicalErrorCallback.callback(message, e);
                 }
             }
         }
