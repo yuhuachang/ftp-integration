@@ -1,4 +1,4 @@
-package com.example.ftpintegration;
+package com.example.ftpintegration.ftp;
 
 import java.io.IOException;
 
@@ -7,6 +7,8 @@ import org.apache.commons.net.ftp.FTPClientConfig;
 import org.apache.commons.net.ftp.FTPReply;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.example.ftpintegration.ftp.flow.FtpFlowSynchronizor;
+import com.example.ftpintegration.ftp.flow.FtpOperationFlow;
 
 public class FtpTemplate {
 
@@ -16,21 +18,17 @@ public class FtpTemplate {
     private int port;
     private String username;
     private String password;
-    private boolean isPassiveMode;
     private FTPClient client;
-    private ErrorCallback technicalErrorCallback;
 
     public FtpTemplate(FTPClient client) {
         this.host = "mock-host";
         this.port = 21;
         this.username = "mock-user";
         this.password = "mock-password";
-        this.isPassiveMode = true;
         this.client = client;
     }
 
-    public FtpTemplate(String host, int port, String username, String password, String serverType,
-            int timeout) {
+    public FtpTemplate(String host, int port, String username, String password, String serverType, int timeout) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -47,15 +45,11 @@ public class FtpTemplate {
         client.setControlKeepAliveTimeout(timeout);
         client.setDataTimeout(timeout);
         client.setDefaultTimeout(timeout);
-        
-       
-    }
 
-    public void setTechnicalErrorCallback(ErrorCallback technicalErrorCallback) {
-        this.technicalErrorCallback = technicalErrorCallback;
     }
 
     public void execute(FtpOperationFlow operation) {
+        FtpFlowSynchronizor synchronizor = operation.getFtpFlowSynchronizor();
         try {
             client.connect(host, port);
 
@@ -72,11 +66,12 @@ public class FtpTemplate {
                         operation.execute(client);
                     } catch (Throwable e) {
                         // operation should handle all exception by itself.
-                        // the template is not able to handle errors in business flow.
+                        // the template is not able to handle errors in business
+                        // flow.
                         String message = "Detected a technical problem in the ftp operation flow.";
                         log.error(message, e);
-                        if (technicalErrorCallback != null) {
-                            technicalErrorCallback.callback(message, e);
+                        if (synchronizor != null) {
+                            synchronizor.onFtpError(message, e);
                         }
                     }
 
@@ -93,22 +88,22 @@ public class FtpTemplate {
                     String message = String.format("Failed to login FTP server %s with %s/%s.", host, username,
                             password);
                     log.error(message);
-                    if (technicalErrorCallback != null) {
-                        technicalErrorCallback.callback(message, null);
+                    if (synchronizor != null) {
+                        synchronizor.onFtpError(message, null);
                     }
                 }
             } else {
                 String message = String.format("Failed to connect FTP server %s", host);
                 log.error(message);
-                if (technicalErrorCallback != null) {
-                    technicalErrorCallback.callback(message, null);
+                if (synchronizor != null) {
+                    synchronizor.onFtpError(message, null);
                 }
             }
         } catch (Throwable e) {
             String message = "Error on open FTP connection.";
             log.error(message, e);
-            if (technicalErrorCallback != null) {
-                technicalErrorCallback.callback(message, e);
+            if (synchronizor != null) {
+                synchronizor.onFtpError(message, null);
             }
         } finally {
             if (client.isConnected()) {

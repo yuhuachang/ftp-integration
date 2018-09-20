@@ -1,14 +1,17 @@
-package com.example.ftpintegration;
+package com.example.ftpintegration.ftp.flow;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
+
 import org.apache.commons.net.ftp.FTPClient;
 import org.apache.commons.net.ftp.FTPFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.example.ftpintegration.processor.FileProcessor;
 
-public class InboundProcessingFlow implements FtpOperationFlow {
+public class InboundProcessingFlow extends FtpOperationFlow {
 
     private static final Logger log = LoggerFactory.getLogger(InboundProcessingFlow.class);
 
@@ -16,9 +19,6 @@ public class InboundProcessingFlow implements FtpOperationFlow {
     private final String inputPath;
     private final String archivePath;
     private boolean isDryRun;
-    private SuccessCallback successCallback;
-    private ErrorCallback errorCallback;
-    private ErrorCallback technicalErrorCallback;
 
     public InboundProcessingFlow(String inputPath, FileProcessor processor) {
         this(inputPath, null, processor);
@@ -43,18 +43,6 @@ public class InboundProcessingFlow implements FtpOperationFlow {
         this.isDryRun = isDryRun;
     }
 
-    public void setSuccessCallback(SuccessCallback successCallback) {
-        this.successCallback = successCallback;
-    }
-
-    public void setErrorCallback(ErrorCallback errorCallback) {
-        this.errorCallback = errorCallback;
-    }
-
-    public void setTechnicalErrorCallback(ErrorCallback technicalErrorCallback) {
-        this.technicalErrorCallback = technicalErrorCallback;
-    }
-
     @Override
     public void execute(FTPClient client) {
 
@@ -64,7 +52,12 @@ public class InboundProcessingFlow implements FtpOperationFlow {
         try {
             files = client.listFiles(inputPath);
         } catch (Exception e) {
-            throw new TechnicalException("Error occur while listing input directory: " + inputPath, e);
+            String message = String.format("Error occur while listing input directory: %s", inputPath);
+            log.error(message, e);
+            if (synchronizor != null) {
+                synchronizor.onFtpError(message, e);
+            }
+            return;
         }
 
         if (files == null) {
@@ -100,8 +93,8 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                     } else {
                         String message = String.format("Not successfully completed reading file: %s", inputFileName);
                         log.error(message);
-                        if (technicalErrorCallback != null) {
-                            technicalErrorCallback.callback(message, null);
+                        if (synchronizor != null) {
+                            synchronizor.onFileError(inputFileName, message, null);
                         }
                         continue;
                     }
@@ -111,8 +104,8 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                     // It can be empty but shouldn't be null.
                     String message = String.format("Nothing read from file: %s. EDI content may be wrong.", inputFileName);
                     log.warn(message);
-                    if (technicalErrorCallback != null) {
-                        technicalErrorCallback.callback(message, null);
+                    if (synchronizor != null) {
+                        synchronizor.onFileError(inputFileName, message, null);
                     }
                     continue;
                 } else {
@@ -122,12 +115,20 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                     try {
                         processor.processFile(bytes);
                         log.info("Complete processing file {}", inputFileName);
-                    } catch (BusinessException e) {
+                    } catch (UnsupportedEncodingException e) {
+                        // File encoding error.
+                        String message = "Cannot decode file content.";
+                        log.error(message, e);
+                        if (synchronizor != null) {
+                            synchronizor.onFileError(inputFileName, message, e);
+                        }
+                        continue;
+                    } catch (Throwable e) {
                         // Errors related to business reason. For example, file content validation failure.
                         // Usually need to contact business users.
                         log.error("Processing file {} failed with error.", inputFileName, e);
-                        if (errorCallback != null) {
-                            errorCallback.callback(e.getMessage(), e);
+                        if (synchronizor != null) {
+                            synchronizor.onFailure(inputFileName, e.getMessage(), e);
                         }
                         continue;
                     }
@@ -148,8 +149,8 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                         } else {
                             String message = String.format("Upload file %s failed.", archiveFileName);
                             log.error(message);
-                            if (technicalErrorCallback != null) {
-                                technicalErrorCallback.callback(message, null);
+                            if (synchronizor != null) {
+                                synchronizor.onFtpError(message, null);
                             }
                             continue;
                         }
@@ -168,27 +169,24 @@ public class InboundProcessingFlow implements FtpOperationFlow {
                     } else {
                         String message = String.format("Delete file %s failed.", inputFileName);
                         log.error(message);
-                        if (technicalErrorCallback != null) {
-                            technicalErrorCallback.callback(message, null);
+                        if (synchronizor != null) {
+                            synchronizor.onFtpError(message, null);
                         }
                         continue;
                     }
                 }
 
                 // Send success callback
-                if (successCallback != null) {
-                    successCallback.callback("Processing input file " + inputFileName + " success.");
+                if (synchronizor != null) {
+                    synchronizor.onSuccess(inputFileName);
                 }
             } catch (Throwable e) {
                 // Technical errors, for example, not able to extract the file content.
                 // Usually need to contact business users and technical people.
                 String message = "There is a technical problem processing the input file. Processing input file failed.";
                 log.error(message, e);
-                if (errorCallback != null) {
-                    errorCallback.callback(message, e);
-                }
-                if (technicalErrorCallback != null) {
-                    technicalErrorCallback.callback(message, e);
+                if (synchronizor != null) {
+                    synchronizor.onFtpError(message, e);
                 }
             }
         }

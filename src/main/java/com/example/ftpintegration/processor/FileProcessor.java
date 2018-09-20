@@ -1,4 +1,4 @@
-package com.example.ftpintegration;
+package com.example.ftpintegration.processor;
 
 import java.io.UnsupportedEncodingException;
 

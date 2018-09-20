@@ -1,9 +1,11 @@
-package com.example.ftpintegration;
+package com.example.ftpintegration.processor;
 
 import org.apache.tika.parser.txt.CharsetDetector;
 import org.apache.tika.parser.txt.CharsetMatch;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,10 +37,15 @@ public class TextFileProcessor implements FileProcessor {
             CharsetDetector detector = new CharsetDetector();
             detector.setText(bytes);
             CharsetMatch matchedCharset = detector.detect();
-            if (log.isDebugEnabled()) {
-                log.debug("Matched charset is {}", matchedCharset.getName());
+            if (matchedCharset == null) {
+                log.info("Cannot find matched charset. Set charset to default UTF-8");
+                charsetName = StandardCharsets.UTF_8.name();
+            } else {
+                if (log.isDebugEnabled()) {
+                    log.debug("Matched charset is {}", matchedCharset.getName());
+                }
+                charsetName = matchedCharset.getName();
             }
-            charsetName = matchedCharset.getName();
         } else {
             // Use provided charset
             charsetName = charset.name();
@@ -58,7 +65,7 @@ public class TextFileProcessor implements FileProcessor {
                 processor.process(lineNumber, line);
             } catch (Throwable e) {
                 String message = String.format("There is an error at line %d. %s", lineNumber, e.getMessage());
-                throw new BusinessException(message, e);
+                throw new RuntimeException(message, e);
             }
             lineNumber++;
         }
