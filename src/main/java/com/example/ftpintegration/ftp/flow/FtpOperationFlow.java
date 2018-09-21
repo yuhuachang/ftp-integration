@@ -4,13 +4,13 @@ import org.apache.commons.net.ftp.FTPClient;
 
 public abstract class FtpOperationFlow {
 
-    protected FtpFlowSynchronizor synchronizor;
+    protected FtpFlowSynchronizer synchronizor;
 
-    public void setFtpFlowSynchronizor(FtpFlowSynchronizor synchronizor) {
+    public void setFtpFlowSynchronizor(FtpFlowSynchronizer synchronizor) {
         this.synchronizor = synchronizor;
     }
 
-    public FtpFlowSynchronizor getFtpFlowSynchronizor() {
+    public FtpFlowSynchronizer getFtpFlowSynchronizer() {
         return synchronizor;
     }
 

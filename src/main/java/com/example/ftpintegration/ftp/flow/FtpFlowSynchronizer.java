@@ -1,6 +1,6 @@
 package com.example.ftpintegration.ftp.flow;
 
-public interface FtpFlowSynchronizor {
+public interface FtpFlowSynchronizer {
 
     void onSuccess(String fileName);
     

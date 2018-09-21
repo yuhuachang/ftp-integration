@@ -20,19 +20,32 @@ public class InboundProcessingFlow extends FtpOperationFlow {
     private final String archivePath;
     private boolean isDryRun;
 
+    public InboundProcessingFlow(FileProcessor processor) {
+        this("/", null, processor);
+    }
+
     public InboundProcessingFlow(String inputPath, FileProcessor processor) {
         this(inputPath, null, processor);
     }
 
     public InboundProcessingFlow(String inputPath, String archivePath, FileProcessor processor) {
         processor.getClass();
+        inputPath.getClass();
         this.processor = processor;
-        this.inputPath = inputPath == null ? "/" : inputPath;
-        this.archivePath = archivePath == null ? "/" : archivePath;
+        this.inputPath = inputPath;
+        this.archivePath = archivePath;
         if (inputPath.equals(archivePath)) {
-            throw new RuntimeException("Input path and archive path cannot be the same.");
+            throw new IllegalArgumentException("Input path and archive path cannot be the same.");
         }
-        isDryRun = true;
+        isDryRun = false;
+    }
+
+    public String getInputPath() {
+        return inputPath;
+    }
+
+    public String getArchivePath() {
+        return archivePath;
     }
 
     public boolean isDryRun() {

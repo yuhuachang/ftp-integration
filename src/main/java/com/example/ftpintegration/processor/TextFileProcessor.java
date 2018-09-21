@@ -2,32 +2,30 @@ package com.example.ftpintegration.processor;
 
 import org.apache.tika.parser.txt.CharsetDetector;
 import org.apache.tika.parser.txt.CharsetMatch;
-import java.io.UnsupportedEncodingException;
+
+import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TextFileProcessor implements FileProcessor {
+public abstract class TextFileProcessor implements FileProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(TextFileProcessor.class);
 
     private final Charset charset;
-    private final RecordProcessor processor;
 
-    public TextFileProcessor(RecordProcessor processor) {
-        this(null, processor);
+    public TextFileProcessor() {
+        this(StandardCharsets.UTF_8);
     }
 
-    public TextFileProcessor(Charset charset, RecordProcessor processor) {
-        processor.getClass();
+    public TextFileProcessor(Charset charset) {
         this.charset = charset;
-        this.processor = processor;
     }
 
     @Override
-    public void processFile(byte[] bytes) throws UnsupportedEncodingException {
+    public void processFile(byte[] bytes) throws IOException {
 
         String charsetName;
         if (charset == null) {
@@ -53,21 +51,8 @@ public class TextFileProcessor implements FileProcessor {
 
         log.info("Use charset {}", charsetName);
         String content = new String(bytes, charsetName);
-        int lineNumber = 1;
-        for (String line : content.split("[\\r\\n]")) {
-            if (line.length() == 0) {
-                continue;
-            }
-            if (log.isDebugEnabled()) {
-                log.debug("line {}: {}", lineNumber, line);
-            }
-            try {
-                processor.process(lineNumber, line);
-            } catch (Throwable e) {
-                String message = String.format("There is an error at line %d. %s", lineNumber, e.getMessage());
-                throw new RuntimeException(message, e);
-            }
-            lineNumber++;
-        }
+        processContent(content);
     }
+
+    protected abstract void processContent(final String content) throws IOException;
 }

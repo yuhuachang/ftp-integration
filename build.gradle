@@ -28,5 +28,6 @@ dependencies {
     compile('commons-net:commons-net:3.6')
     compile('org.apache.tika:tika-core:1.18')
     compile('org.apache.tika:tika-parsers:1.18')
+    compile('org.apache.commons:commons-csv:1.5')
     testCompile('org.springframework.boot:spring-boot-starter-test')
 }

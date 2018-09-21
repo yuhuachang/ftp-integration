@@ -40,6 +40,6 @@ public abstract class CsvProcessor implements RecordProcessor {
         }
         process(valueMap);
     }
-    
+
     protected abstract void process(Map<String, String> valueMap) throws Throwable;
 }
