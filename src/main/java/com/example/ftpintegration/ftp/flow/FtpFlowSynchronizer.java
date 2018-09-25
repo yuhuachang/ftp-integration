@@ -45,8 +45,9 @@ public interface FtpFlowSynchronizer {
      * file, failed to decode the file and retrieve the file content.
      * 
      * @param fileName
+     * @param content
      * @param message
      * @param cause
      */
-    void onFileError(String fileName, String message, Throwable cause);
+    void onFileError(String fileName, byte[] content, String message, Throwable cause);
 }

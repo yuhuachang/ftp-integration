@@ -62,7 +62,7 @@ public class FtpIntegrationApplication {
             }
 
             @Override
-            public void onFileError(String fileName, String message, Throwable cause) {
+            public void onFileError(String fileName, byte[] content, String message, Throwable cause) {
                 System.err.println("send email to tell IT and user edi file is incorrect.");
                 if (cause != null) {
                     cause.printStackTrace();
@@ -88,6 +88,8 @@ public class FtpIntegrationApplication {
             }
         });
 
+        operation.setDryRun(true);
+        
         FtpTemplate template = new FtpTemplate("localhost", 21, "user", "password", FTPClientConfig.SYST_UNIX, 10000);
         template.execute(operation);
     }

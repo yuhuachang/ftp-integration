@@ -56,8 +56,10 @@ public class InboundProcessingFlow extends FtpOperationFlow {
 
     @Override
     public void execute(FTPClient client) throws IOException {
-        
-        FtpOperation op = new FtpOperation(client);
+        execute(new FtpOperation(client));
+    }
+
+    public void execute(FtpOperation op) throws IOException {
 
         // List files in the target directory.
         log.info("List input directory {}", inputPath);
@@ -73,6 +75,8 @@ public class InboundProcessingFlow extends FtpOperationFlow {
         // Iterate all files and send to callback function.
         for (FTPFile file : files) {
 
+            String fileName = file.getName();
+
             // Ignore directories.
             if (file.isDirectory()) {
                 continue;
@@ -80,7 +84,7 @@ public class InboundProcessingFlow extends FtpOperationFlow {
 
             // Begin transaction here. Each file has its own transaction.
             try {
-                String inputFileName = String.format("%s/%s", inputPath, file.getName());
+                String inputFileName = String.format("%s/%s", inputPath, fileName);
                 if (log.isDebugEnabled()) {
                     log.debug("Try to read file: {}", inputFileName);
                 }
@@ -97,10 +101,10 @@ public class InboundProcessingFlow extends FtpOperationFlow {
                     processor.processFile(bytes);
                     log.info("Complete processing file {}", inputFileName);
                 } catch (IOException e) {
-                    String message = "Cannot decode file content.";
+                    String message = String.format("Error occur while processing file %s", inputFileName);
                     log.error(message, e);
                     if (synchronizer != null) {
-                        synchronizer.onFileError(inputFileName, message, e);
+                        synchronizer.onFileError(inputFileName, bytes, message, e);
                     }
                     continue;
                 }
@@ -108,29 +112,28 @@ public class InboundProcessingFlow extends FtpOperationFlow {
                 // 3. archiving (if archive folder is set)
                 if (archivePath == null) {
                     log.info("No archive folder set.  No archiving action.");
-                    continue;
-                }
-
-                // moving file to archive folder.
-                String archiveFileName = String.format("%s/%s", archivePath, file.getName());
-                log.info("Archive file {}", archiveFileName);
-                if (isDryRun) {
-                    log.info("Operating in test mode.  Nothing will be changed on FTP.");
                 } else {
-                    op.storeFile(archiveFileName, bytes);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Upload success.");
+                    // moving file to archive folder.
+                    String archiveFileName = String.format("%s/%s", archivePath, fileName);
+                    log.info("Archive file {}", archiveFileName);
+                    if (isDryRun) {
+                        log.info("Operating in test mode.  Nothing will be changed on FTP.");
+                    } else {
+                        op.storeFile(archiveFileName, bytes);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Upload success.");
+                        }
                     }
-                }
 
-                // 4. Finally, we delete the input file.
-                log.info("Delete input file: {}", inputFileName);
-                if (isDryRun) {
-                    log.info("Operating in test mode.  Nothing will be changed on FTP.");
-                } else {
-                    op.deleteFile(inputFileName);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Delete success.");
+                    // 4. Finally, we delete the input file.
+                    log.info("Delete input file: {}", inputFileName);
+                    if (isDryRun) {
+                        log.info("Operating in test mode.  Nothing will be changed on FTP.");
+                    } else {
+                        op.deleteFile(inputFileName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Delete success.");
+                        }
                     }
                 }
 

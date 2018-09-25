@@ -70,9 +70,11 @@ public class FtpTemplate {
                     try {
                         // execute operation
                         operation.execute(client);
-                    } catch (IOException e) {
-                        // operation should handle all exception by itself. the template is not able to
+                    } catch (Throwable e) {
+                        // Operation should handle all exception by itself. the template is not able to
                         // handle errors in business flow.
+                        // Although operation will only reply IOException, we still need to catch all
+                        // errors here in order to make sure it will logout after error.
                         String message = "Detected a technical problem in the ftp operation flow.";
                         log.error(message, e);
                         if (synchronizer != null) {

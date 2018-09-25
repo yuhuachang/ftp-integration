@@ -201,21 +201,35 @@ public class FtpTemplateTest {
      * @throws IOException
      */
     private void operationFailureHelper(boolean hasError) throws IOException {
+        
+        // connect success
         when(client.getReplyCode()).thenReturn(200);
+        
+        // login success 
         when(client.login(anyString(), anyString())).thenReturn(true);
+ 
         if (hasError) {
+            // got exception during processing...
             doThrow(RuntimeException.class).when(operation).execute(any(FTPClient.class));
         }
 
         template.execute(operation);
 
+        // has login
         verify(client, times(1)).login(anyString(), anyString());
+        
+        // operation is executed
+        verify(operation, times(1)).execute(any(FTPClient.class));
+        
         if (hasError) {
-            verify(operation, times(1)).execute(any(FTPClient.class));
+            // if error occurs, trigger synchronizer once.
             verify(synchronizer, times(1)).onFtpError(anyString(), any());
         } else {
+            // if no error, do not trigger synchronizer any error.
             verify(synchronizer, times(0)).onFtpError(anyString(), any());
         }
+        
+        // should logout anyway.
         verify(client, times(1)).logout();
     }
 
