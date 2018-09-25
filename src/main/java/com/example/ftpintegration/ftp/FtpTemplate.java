@@ -70,7 +70,7 @@ public class FtpTemplate {
                     try {
                         // execute operation
                         operation.execute(client);
-                    } catch (RuntimeException e) {
+                    } catch (IOException e) {
                         // operation should handle all exception by itself. the template is not able to
                         // handle errors in business flow.
                         String message = "Detected a technical problem in the ftp operation flow.";

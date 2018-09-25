@@ -46,7 +46,7 @@ public class FtpIntegrationApplication {
             }
         });
 
-        operation.setFtpFlowSynchronizor(new FtpFlowSynchronizer() {
+        operation.setFtpFlowSynchronizer(new FtpFlowSynchronizer() {
 
             @Override
             public void onSuccess(String fileName) {
@@ -75,6 +75,16 @@ public class FtpIntegrationApplication {
                 if (cause != null) {
                     cause.printStackTrace();
                 }
+            }
+
+            @Override
+            public void onListing(int numberOfFiles) {
+                System.err.println("numberOfFiles = " + numberOfFiles);
+            }
+
+            @Override
+            public void onStart(String fileName) {
+                System.err.println("start processing " + fileName);
             }
         });
 
