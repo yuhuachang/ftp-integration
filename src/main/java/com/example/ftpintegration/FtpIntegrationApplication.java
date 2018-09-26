@@ -54,14 +54,6 @@ public class FtpIntegrationApplication {
             }
 
             @Override
-            public void onFailure(String fileName, String message, Throwable cause) {
-                System.err.println("send email to tell user processing edi failed.");
-                if (cause != null) {
-                    cause.printStackTrace();
-                }
-            }
-
-            @Override
             public void onFileError(String fileName, byte[] content, String message, Throwable cause) {
                 System.err.println("send email to tell IT and user edi file is incorrect.");
                 if (cause != null) {
