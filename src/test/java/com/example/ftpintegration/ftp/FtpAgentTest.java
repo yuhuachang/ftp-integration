@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-public class FtpOperationTest {
+public class FtpAgentTest {
 
     private FTPClient client;
 
@@ -23,7 +23,7 @@ public class FtpOperationTest {
 
     @Test(expected = NullPointerException.class)
     public void setup() {
-        new FtpOperation(null);
+        new FtpAgent(null);
     }
 
     @Test
@@ -31,11 +31,11 @@ public class FtpOperationTest {
         String pathname = "pathname";
         when(client.listFiles(pathname)).thenReturn(null);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         try {
             op.listFiles(pathname);
             fail("expect to see exception if list command return null.");
-        } catch (IOException e) {
+        } catch (FtpException e) {
             // good.
         }
 
@@ -49,11 +49,11 @@ public class FtpOperationTest {
         when(client.listFiles(pathname)).thenReturn(new FTPFile[] {});
         when(client.getReplyCode()).thenReturn(0);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         try {
             op.listFiles(pathname);
             fail("expect to see exception if list command return null.");
-        } catch (IOException e) {
+        } catch (FtpException e) {
             // good.
         }
 
@@ -63,12 +63,12 @@ public class FtpOperationTest {
     }
 
     @Test
-    public void listFilesSuccess1() throws IOException {
+    public void listFilesSuccess1() throws IOException, FtpException {
         String pathname = "pathname";
         when(client.listFiles(pathname)).thenReturn(new FTPFile[] {});
         when(client.getReplyCode()).thenReturn(200);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         FTPFile[] files = op.listFiles(pathname);
         assertEquals("returned files not match.", 0, files.length);
 
@@ -78,12 +78,12 @@ public class FtpOperationTest {
     }
 
     @Test
-    public void listFilesSuccess2() throws IOException {
+    public void listFilesSuccess2() throws IOException, FtpException {
         String pathname = "pathname";
         when(client.listFiles(pathname)).thenReturn(new FTPFile[] { mock(FTPFile.class), mock(FTPFile.class) });
         when(client.getReplyCode()).thenReturn(200);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         FTPFile[] files = op.listFiles(pathname);
         assertEquals("returned files not match.", 2, files.length);
 
@@ -97,11 +97,11 @@ public class FtpOperationTest {
         String fileName = "file";
         when(client.retrieveFile(eq(fileName), any(OutputStream.class))).thenReturn(false);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         try {
             op.retrieveFile(fileName);
             fail("should die because byte array is null");
-        } catch (IOException e) {
+        } catch (FtpException e) {
             // good.
         }
 
@@ -110,11 +110,11 @@ public class FtpOperationTest {
     }
 
     @Test
-    public void retrieveFileSuccess() throws IOException {
+    public void retrieveFileSuccess() throws IOException, FtpException {
         String fileName = "file";
         when(client.retrieveFile(eq(fileName), any(OutputStream.class))).thenReturn(true);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         op.retrieveFile(fileName);
 
         verify(client, times(1)).retrieveFile(eq(fileName), any(OutputStream.class));
@@ -122,11 +122,11 @@ public class FtpOperationTest {
     }
 
     @Test
-    public void storeFileSuccess() throws IOException {
+    public void storeFileSuccess() throws IOException, FtpException {
         String fileName = "file";
         when(client.storeFile(eq(fileName), any(InputStream.class))).thenReturn(true);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         op.storeFile(fileName, new byte[] {});
 
         verify(client, times(1)).storeFile(eq(fileName), any(InputStream.class));
@@ -138,24 +138,24 @@ public class FtpOperationTest {
         String fileName = "file";
         when(client.storeFile(eq(fileName), any(InputStream.class))).thenReturn(false);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         try {
             op.storeFile(fileName, new byte[] {});
             fail("should die because command return false.");
-        } catch (IOException e) {
+        } catch (FtpException e) {
             // good.
         }
 
         verify(client, times(1)).storeFile(eq(fileName), any(InputStream.class));
         verifyNoMoreInteractions(client);
     }
-    
+
     @Test
-    public void deleteFileSuccess() throws IOException {
+    public void deleteFileSuccess() throws IOException, FtpException {
         String fileName = "file";
         when(client.deleteFile(eq(fileName))).thenReturn(true);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         op.deleteFile(fileName);
 
         verify(client, times(1)).deleteFile(eq(fileName));
@@ -167,11 +167,11 @@ public class FtpOperationTest {
         String fileName = "file";
         when(client.deleteFile(eq(fileName))).thenReturn(false);
 
-        FtpOperation op = new FtpOperation(client);
+        FtpAgent op = new FtpAgent(client);
         try {
             op.deleteFile(fileName);
             fail("should die because command return false.");
-        } catch (IOException e) {
+        } catch (FtpException e) {
             // good.
         }
 

@@ -15,15 +15,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.SocketException;
 
-import com.example.ftpintegration.ftp.flow.FtpFlowSynchronizer;
-import com.example.ftpintegration.ftp.flow.FtpOperationFlow;
-
 public class FtpTemplateTest {
 
     private FTPClient client;
+    private FtpServer server;
     private FtpTemplate template;
-    private FtpOperationFlow operation;
-    private FtpFlowSynchronizer synchronizer;
 
     private String host = "mock-host";
     private int port = 123;
@@ -39,16 +35,13 @@ public class FtpTemplateTest {
         // create mocked ftp client
         client = mock(FTPClient.class);
 
-        // create test ftp template object
-        Constructor<FtpTemplate> constructor = FtpTemplate.class.getDeclaredConstructor(FTPClient.class, String.class,
-                Integer.TYPE, String.class, String.class, String.class, Integer.TYPE);
-        constructor.setAccessible(true);
-        template = constructor.newInstance(client, host, port, username, password, serverType, timeout);
+        server = new FtpServer(host, port, username, password, serverType);
 
-        // create test operation object
-        operation = mock(FtpOperationFlow.class);
-        synchronizer = mock(FtpFlowSynchronizer.class);
-        when(operation.getFtpFlowSynchronizer()).thenReturn(synchronizer);
+        // create test ftp template object
+        Constructor<FtpTemplate> constructor = FtpTemplate.class.getDeclaredConstructor(FTPClient.class,
+                FtpServer.class, Integer.TYPE);
+        constructor.setAccessible(true);
+        template = constructor.newInstance(client, server, timeout);
     }
 
     /**
@@ -83,7 +76,7 @@ public class FtpTemplateTest {
         when(client.isConnected()).thenReturn(isConnected);
 
         // execute
-        template.execute(operation);
+        template.retrieveFile(null, null);
 
         verify(client, times(1)).connect(anyString(), anyInt());
         if (isConnected) {
@@ -201,13 +194,13 @@ public class FtpTemplateTest {
      * @throws IOException
      */
     private void operationFailureHelper(boolean hasError) throws IOException {
-        
+
         // connect success
         when(client.getReplyCode()).thenReturn(200);
-        
-        // login success 
+
+        // login success
         when(client.login(anyString(), anyString())).thenReturn(true);
- 
+
         if (hasError) {
             // got exception during processing...
             doThrow(RuntimeException.class).when(operation).execute(any(FTPClient.class));
@@ -217,10 +210,10 @@ public class FtpTemplateTest {
 
         // has login
         verify(client, times(1)).login(anyString(), anyString());
-        
+
         // operation is executed
         verify(operation, times(1)).execute(any(FTPClient.class));
-        
+
         if (hasError) {
             // if error occurs, trigger synchronizer once.
             verify(synchronizer, times(1)).onFtpError(anyString(), any());
@@ -228,7 +221,7 @@ public class FtpTemplateTest {
             // if no error, do not trigger synchronizer any error.
             verify(synchronizer, times(0)).onFtpError(anyString(), any());
         }
-        
+
         // should logout anyway.
         verify(client, times(1)).logout();
     }

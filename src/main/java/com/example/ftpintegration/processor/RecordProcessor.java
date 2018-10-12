@@ -1,6 +1,8 @@
 package com.example.ftpintegration.processor;
 
+@Deprecated
 public interface RecordProcessor {
 
-    void process(int lineNumber, String line) throws Throwable;
+    @Deprecated
+    void process(long lineNumber, String[] values);
 }
