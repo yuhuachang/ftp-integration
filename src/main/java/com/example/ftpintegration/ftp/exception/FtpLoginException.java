@@ -1,7 +1,7 @@
-package com.example.ftpintegration.ftp;
+package com.example.ftpintegration.ftp.exception;
 
 /**
- * Ftp related exception.
+ * Ftp login related exception.
  * 
  * @author Yu-Hua Chang
  *

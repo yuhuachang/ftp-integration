@@ -1,238 +1,820 @@
 package com.example.ftpintegration.ftp;
 
 import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.apache.commons.net.ftp.FTPClient;
-import org.apache.commons.net.ftp.FTPClientConfig;
-import org.apache.commons.net.ftp.FTPConnectionClosedException;
+import org.apache.commons.net.ftp.FTPFile;
 import org.junit.Before;
 import org.junit.Test;
+
+import com.example.ftpintegration.ftp.exception.FtpConnectionException;
+import com.example.ftpintegration.ftp.exception.FtpLoginException;
+import com.example.ftpintegration.ftp.exception.FtpModeSwitchException;
+import com.example.ftpintegration.ftp.exception.FtpRetrieveFileException;
+import com.example.ftpintegration.ftp.exception.FtpStoreFileException;
+
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.net.SocketException;
+import java.util.List;
 
 public class FtpTemplateTest {
-
-    private FTPClient client;
-    private FtpServer server;
-    private FtpTemplate template;
 
     private String host = "mock-host";
     private int port = 123;
     private String username = "mock-user";
     private String password = "mock-password";
-    private String serverType = "mock-serverType";
-    private int timeout = 321;
+
+    private FtpAgent agent;
+    private FtpTemplate template;
 
     @Before
-    public void before() throws NoSuchFieldException, SecurityException, IllegalArgumentException,
-            IllegalAccessException, NoSuchMethodException, InstantiationException, InvocationTargetException {
-
-        // create mocked ftp client
-        client = mock(FTPClient.class);
-
-        server = new FtpServer(host, port, username, password, serverType);
-
-        // create test ftp template object
-        Constructor<FtpTemplate> constructor = FtpTemplate.class.getDeclaredConstructor(FTPClient.class,
-                FtpServer.class, Integer.TYPE);
-        constructor.setAccessible(true);
-        template = constructor.newInstance(client, server, timeout);
-    }
-
-    /**
-     * check host, port, username, password are all set.
-     */
-    @Test
-    public void basicSetup() {
-        assertEquals("FTP mock-user/mock-password@mock-host:123", template.toString());
-    }
-
-    /**
-     * check default configuration on ftp client are set.
-     */
-    @Test
-    public void ftpClientSetup() {
-        verify(client, times(1)).configure(any(FTPClientConfig.class));
-        verify(client, times(1)).setConnectTimeout(timeout);
-        verify(client, times(1)).setControlKeepAliveReplyTimeout(timeout);
-        verify(client, times(1)).setControlKeepAliveTimeout(timeout);
-        verify(client, times(1)).setDataTimeout(timeout);
-        verify(client, times(1)).setDefaultTimeout(timeout);
-    }
-
-    /**
-     * simulate connection failure
-     */
-    private void connectionFailureHelper(Class<? extends Throwable> e, boolean isConnected)
-            throws SocketException, IOException {
-
-        // throw SocketException or IOException when connect
-        doThrow(e).when(client).connect(anyString(), anyInt());
-        when(client.isConnected()).thenReturn(isConnected);
-
-        // execute
-        template.retrieveFile(null, null);
-
-        verify(client, times(1)).connect(anyString(), anyInt());
-        if (isConnected) {
-            verify(client, times(1)).disconnect();
-        }
-
-        // should notify synchronizer about this error
-        verify(synchronizer, times(1)).onFtpError(anyString(), any());
+    public void before() {
+        agent = mock(FtpAgent.class);
+        FtpServer server = mock(FtpServer.class);
+        when(server.getFtpAgent()).thenReturn(agent);
+        when(server.getHost()).thenReturn(host);
+        when(server.getPort()).thenReturn(port);
+        when(server.getUsername()).thenReturn(username);
+        when(server.getPassword()).thenReturn(password);
+        template = new FtpTemplate(server);
     }
 
     @Test
-    public void connectionFailure1() throws SocketException, IOException {
-        connectionFailureHelper(SocketException.class, false);
+    public void connectionTemplateNoOperation() throws Throwable {
+        FtpTemplate.DoWithConnectionTemplate tmp = template.new DoWithConnectionTemplate(null);
+        tmp.execute(null);
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void connectionFailure2() throws SocketException, IOException {
-        connectionFailureHelper(IOException.class, false);
+    public void connectionTemplateConnectionException() throws Throwable {
+        doThrow(FtpConnectionException.class).when(agent).connect(eq(host), eq(port));
+
+        FtpTemplate.DoWithConnectionTemplate tmp = template.new DoWithConnectionTemplate(null);
+        FtpOperationResult result = new FtpOperationResult();
+        assertThrows(FtpConnectionException.class, () -> {
+            tmp.execute(result);
+        });
+        assertFalse(result.isSuccess());
+        assertEquals(FtpConnectionException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void connectionFailure3() throws SocketException, IOException {
-        connectionFailureHelper(SocketException.class, true);
+    public void connectionTemplateModeSwitchException() throws Throwable {
+        doThrow(FtpModeSwitchException.class).when(agent).enterPassiveMode();
+
+        FtpTemplate.DoWithConnectionTemplate tmp = template.new DoWithConnectionTemplate(null);
+        FtpOperationResult result = new FtpOperationResult();
+        assertThrows(FtpModeSwitchException.class, () -> {
+            tmp.execute(result);
+        });
+        assertFalse(result.isSuccess());
+        assertEquals(FtpModeSwitchException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void connectionFailure4() throws SocketException, IOException {
-        connectionFailureHelper(IOException.class, true);
-    }
+    public void connectionTemplateOperationError() throws Throwable {
+        FtpOperationResult result = new FtpOperationResult();
+        FtpTemplate.FtpOperation op = mock(FtpTemplate.FtpOperation.class);
+        doThrow(Throwable.class).when(op).execute(result);
+        FtpTemplate.DoWithConnectionTemplate tmp = template.new DoWithConnectionTemplate(op);
 
-    /**
-     * Reply code is negative. Connection is not established.
-     */
-    @Test
-    public void unsuccessfulConnect() {
+        assertThrows(Throwable.class, () -> {
+            tmp.execute(result);
+        });
+        assertFalse(result.isSuccess());
+        assertNull(result.getError());
 
-        // return negative reply code after connect
-        when(client.getReplyCode()).thenReturn(-1);
-
-        // execute
-        template.execute(operation);
-
-        verify(client, times(1)).getReplyCode();
-
-        // should notify synchronizer about this error
-        verify(synchronizer, times(1)).onFtpError(anyString(), any());
-    }
-
-    /**
-     * FTPConnectionClosedException, IOException
-     * 
-     * @throws IOException
-     */
-    private void loginFailHelper(Class<? extends Throwable> e, boolean isSuccess) throws IOException {
-
-        // return a success reply code
-        when(client.getReplyCode()).thenReturn(200);
-
-        if (e == null) {
-            // no exception.
-            when(client.login(anyString(), anyString())).thenReturn(isSuccess);
-
-            template.execute(operation);
-
-            verify(client, times(1)).login(anyString(), anyString());
-
-            if (isSuccess) {
-                // operation is executed. (successfulness does not matter)
-                verify(operation, times(1)).execute(any(FTPClient.class));
-
-                // success. should logout. (successfulness does not matter)
-                verify(client, times(1)).logout();
-            } else {
-                // fail. should notify synchronizer about this error.
-                verify(synchronizer, times(1)).onFtpError(anyString(), any());
-            }
-        } else {
-            // has exception.
-            doThrow(e).when(client).login(anyString(), anyString());
-
-            template.execute(operation);
-
-            verify(client, times(1)).login(anyString(), anyString());
-
-            // should notify synchronizer about this error
-            verify(synchronizer, times(1)).onFtpError(anyString(), any());
-        }
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void loginFail1() throws IOException {
-        loginFailHelper(null, true);
+    public void loginTemplateNoOperation() throws Throwable {
+        FtpTemplate.DoWithLoginTemplate tmp = template.new DoWithLoginTemplate(null);
+        tmp.execute(null);
+
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void loginFail2() throws IOException {
-        loginFailHelper(null, false);
+    public void loginTemplateLoginException() throws Throwable {
+        doThrow(FtpLoginException.class).when(agent).login(eq(username), eq(password));
+
+        FtpTemplate.DoWithLoginTemplate tmp = template.new DoWithLoginTemplate(null);
+        FtpOperationResult result = new FtpOperationResult();
+        assertThrows(FtpLoginException.class, () -> {
+            tmp.execute(result);
+        });
+        assertFalse(result.isSuccess());
+        assertEquals(FtpLoginException.class, result.getError().getClass());
+
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void loginFail3() throws IOException {
-        loginFailHelper(FTPConnectionClosedException.class, true);
+    public void loginTemplateOperationError() throws Throwable {
+        FtpOperationResult result = new FtpOperationResult();
+        FtpTemplate.FtpOperation op = mock(FtpTemplate.FtpOperation.class);
+        doThrow(Throwable.class).when(op).execute(result);
+        FtpTemplate.DoWithLoginTemplate tmp = template.new DoWithLoginTemplate(op);
+
+        assertThrows(Throwable.class, () -> {
+            tmp.execute(result);
+        });
+        assertFalse(result.isSuccess());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void loginFail4() throws IOException {
-        loginFailHelper(IOException.class, true);
-    }
+    public void defaultTemplateConnectionException() throws Throwable {
+        doThrow(FtpConnectionException.class).when(agent).connect(eq(host), eq(port));
 
-    /**
-     * No matter what happened, ftp client should logout and close, and report on
-     * errors.
-     * 
-     * @param hasError
-     * @throws IOException
-     */
-    private void operationFailureHelper(boolean hasError) throws IOException {
+        FtpOperationResult result = new FtpOperationResult();
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
 
-        // connect success
-        when(client.getReplyCode()).thenReturn(200);
+        result = tmp.run(null);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpConnectionException.class, result.getError().getClass());
 
-        // login success
-        when(client.login(anyString(), anyString())).thenReturn(true);
-
-        if (hasError) {
-            // got exception during processing...
-            doThrow(RuntimeException.class).when(operation).execute(any(FTPClient.class));
-        }
-
-        template.execute(operation);
-
-        // has login
-        verify(client, times(1)).login(anyString(), anyString());
-
-        // operation is executed
-        verify(operation, times(1)).execute(any(FTPClient.class));
-
-        if (hasError) {
-            // if error occurs, trigger synchronizer once.
-            verify(synchronizer, times(1)).onFtpError(anyString(), any());
-        } else {
-            // if no error, do not trigger synchronizer any error.
-            verify(synchronizer, times(0)).onFtpError(anyString(), any());
-        }
-
-        // should logout anyway.
-        verify(client, times(1)).logout();
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void operationFailure1() throws IOException {
-        operationFailureHelper(true);
+    public void defaultTemplateModeSwitchException() throws Throwable {
+        doThrow(FtpModeSwitchException.class).when(agent).enterPassiveMode();
+
+        FtpOperationResult result = new FtpOperationResult();
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
+
+        result = tmp.run(null);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpModeSwitchException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 
     @Test
-    public void operationFailure2() throws IOException {
-        operationFailureHelper(false);
+    public void defaultTemplateLoginException() throws Throwable {
+        doThrow(FtpLoginException.class).when(agent).login(eq(username), eq(password));
+
+        FtpOperationResult result = new FtpOperationResult();
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
+
+        result = tmp.run(null);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpLoginException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+    }
+
+    @Test
+    public void defaultTemplateOperationSuccess() throws Throwable {
+        FtpTemplate.FtpOperation op = result -> {
+            result.setSuccess(true);
+        };
+
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
+        FtpOperationResult result = tmp.run(op);
+        assertTrue(result.isSuccess());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+    }
+
+    @Test
+    public void defaultTemplateOperationException1() throws Throwable {
+        FtpTemplate.FtpOperation op = mock(FtpTemplate.FtpOperation.class);
+        doThrow(Throwable.class).when(op).execute(any(FtpOperationResult.class));
+
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
+        FtpOperationResult result = tmp.run(op);
+        assertFalse(result.isSuccess());
+        assertEquals(Throwable.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+    }
+
+    @Test
+    public void defaultTemplateOperationException2() throws Throwable {
+        FtpTemplate.FtpOperation op = result -> {
+            result.setSuccess(true);
+            throw new IOException();
+        };
+
+        FtpTemplate.DefaultTemplate tmp = template.new DefaultTemplate();
+        FtpOperationResult result = tmp.run(op);
+        assertFalse(result.isSuccess());
+        assertEquals(IOException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+    }
+
+    @Test
+    public void retrieveFileSuccess() throws Throwable {
+        String fileName = "fileName";
+        String message = "messsage";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(fileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        FtpOperationResult result = template.retrieveFile(fileName, handler);
+        assertTrue(result.isSuccess());
+        assertEquals(message, result.getMessage());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(fileName));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveFileError() throws Throwable {
+        String fileName = "fileName";
+        String message = "messsage";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(fileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+
+        doThrow(Throwable.class).when(handler).handleFile(any(byte[].class));
+
+        FtpOperationResult result = template.retrieveFile(fileName, handler);
+        assertFalse(result.isSuccess());
+        assertNotSame(message, result.getMessage());
+        assertEquals(Throwable.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(fileName));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenDeleteRetrieveError() throws Throwable {
+        String fileName = "fileName";
+        doThrow(FtpRetrieveFileException.class).when(agent).retrieveFile(eq(fileName));
+        FileHandler handler = mock(FileHandler.class);
+
+        FtpOperationResult result = template.retrieveThenDelete(fileName, handler);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpRetrieveFileException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(fileName));
+        // agent.deleteFile(fileName) should not be not called.
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenDeleteHandlingError() throws Throwable {
+        String fileName = "fileName";
+        String message = "messsage";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(fileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+
+        doThrow(Throwable.class).when(handler).handleFile(any(byte[].class));
+
+        FtpOperationResult result = template.retrieveThenDelete(fileName, handler);
+        assertFalse(result.isSuccess());
+        assertNotSame(message, result.getMessage());
+        assertEquals(Throwable.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(fileName));
+        // agent.deleteFile(fileName) should not be not called.
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenDeleteHandlingSuccess() throws Throwable {
+        String fileName = "fileName";
+        String message = "messsage";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(fileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        FtpOperationResult result = template.retrieveThenDelete(fileName, handler);
+        assertTrue(result.isSuccess());
+        assertEquals(message, result.getMessage());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(fileName));
+        verify(agent, times(1)).deleteFile(eq(fileName));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveRetrieveError() throws Throwable {
+        String inputFileName = "inputFileName";
+        String archiveFileName = "archiveFileName";
+        doThrow(FtpRetrieveFileException.class).when(agent).retrieveFile(eq(inputFileName));
+        FileHandler handler = mock(FileHandler.class);
+
+        FtpOperationResult result = template.retrieveThenMove(inputFileName, archiveFileName, handler);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpRetrieveFileException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(inputFileName));
+        // agent.storeFile(...) should not be called.
+        // agent.deleteFile(...) should not be not called.
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveHandlingError() throws Throwable {
+        String inputFileName = "inputFileName";
+        String archiveFileName = "archiveFileName";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(inputFileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+
+        doThrow(Throwable.class).when(handler).handleFile(any(byte[].class));
+
+        FtpOperationResult result = template.retrieveThenMove(inputFileName, archiveFileName, handler);
+        assertFalse(result.isSuccess());
+        assertEquals(Throwable.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(inputFileName));
+        // agent.storeFile(...) should not be called.
+        // agent.deleteFile(...) should not be not called.
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveStoreError() throws Throwable {
+        String inputFileName = "inputFileName";
+        String archiveFileName = "archiveFileName";
+        String message = "message";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(inputFileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        doThrow(FtpStoreFileException.class).when(agent).storeFile(eq(archiveFileName), any(byte[].class));
+
+        FtpOperationResult result = template.retrieveThenMove(inputFileName, archiveFileName, handler);
+        assertFalse(result.isSuccess());
+        assertNotSame(message, result.getMessage());
+        assertEquals(FtpStoreFileException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(inputFileName));
+        verify(agent, times(1)).storeFile(eq(archiveFileName), any(byte[].class));
+        // agent.deleteFile(...) should not be not called.
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveSuccess() throws Throwable {
+        String inputFileName = "inputFileName";
+        String archiveFileName = "archiveFileName";
+        String message = "message";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(inputFileName))).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        FtpOperationResult result = template.retrieveThenMove(inputFileName, archiveFileName, handler);
+        assertTrue(result.isSuccess());
+        assertEquals(message, result.getMessage());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).retrieveFile(eq(inputFileName));
+        verify(agent, times(1)).storeFile(eq(archiveFileName), any(byte[].class));
+        verify(agent, times(1)).deleteFile(eq(inputFileName));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenDeleteAllException() throws Throwable {
+        String inputDirectory = "inputDirectory";
+        String fileName2 = "fileName2";
+        String fileName3 = "fileName3";
+        String message = "messsage";
+
+        // 1. directory
+        FTPFile file1 = mock(FTPFile.class);
+        when(file1.isDirectory()).thenReturn(true);
+
+        // 2. file (fail)
+        FTPFile file2 = mock(FTPFile.class);
+        when(file2.isDirectory()).thenReturn(false);
+        when(file2.getName()).thenReturn(fileName2);
+        doThrow(FtpRetrieveFileException.class).when(agent).retrieveFile(eq(inputDirectory + "/" + fileName2));
+
+        // 3. file (success)
+        FTPFile file3 = mock(FTPFile.class);
+        when(file3.isDirectory()).thenReturn(false);
+        when(file3.getName()).thenReturn(fileName3);
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(inputDirectory + "/" + fileName3))).thenReturn(bytes);
+
+        when(agent.listFiles(eq(inputDirectory))).thenReturn(new FTPFile[] { file1, file2, file3 });
+
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        List<FtpOperationResult> results = template.retrieveThenDeleteAll(inputDirectory, handler);
+        assertEquals(2, results.size());
+
+        assertFalse(results.get(0).isSuccess());
+        assertEquals(FtpRetrieveFileException.class, results.get(0).getError().getClass());
+
+        assertTrue(results.get(1).isSuccess());
+        assertNull(results.get(1).getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).listFiles(eq(inputDirectory));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName3));
+        // agent.deleteFile(...) on failed file should not be called.
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenDeleteAllSuccess() throws Throwable {
+        String inputDirectory = "inputDirectory";
+        String fileName2 = "fileName2";
+        String fileName3 = "fileName3";
+        String message = "messsage";
+
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(anyString())).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        // 1. directory
+        FTPFile file1 = mock(FTPFile.class);
+        when(file1.isDirectory()).thenReturn(true);
+
+        // 2. file (success)
+        FTPFile file2 = mock(FTPFile.class);
+        when(file2.isDirectory()).thenReturn(false);
+        when(file2.getName()).thenReturn(fileName2);
+
+        // 3. file (success)
+        FTPFile file3 = mock(FTPFile.class);
+        when(file3.isDirectory()).thenReturn(false);
+        when(file3.getName()).thenReturn(fileName3);
+
+        when(agent.listFiles(eq(inputDirectory))).thenReturn(new FTPFile[] { file1, file2, file3 });
+
+        List<FtpOperationResult> results = template.retrieveThenDeleteAll(inputDirectory, handler);
+        assertEquals(2, results.size());
+
+        assertTrue(results.get(0).isSuccess());
+        assertNull(results.get(0).getError());
+
+        assertTrue(results.get(1).isSuccess());
+        assertNull(results.get(1).getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).listFiles(eq(inputDirectory));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(2)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveAllException1() throws Throwable {
+        String inputDirectory = "inputDirectory";
+        String archiveDirectory = "archiveDirectory";
+        String fileName2 = "fileName2";
+        String fileName3 = "fileName3";
+        String message = "messsage";
+
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        // 1. directory
+        FTPFile file1 = mock(FTPFile.class);
+        when(file1.isDirectory()).thenReturn(true);
+
+        // 2. file (success)
+        FTPFile file2 = mock(FTPFile.class);
+        when(file2.isDirectory()).thenReturn(false);
+        when(file2.getName()).thenReturn(fileName2);
+        doThrow(FtpRetrieveFileException.class).when(agent).retrieveFile(eq(inputDirectory + "/" + fileName2));
+
+        // 3. file (success)
+        FTPFile file3 = mock(FTPFile.class);
+        when(file3.isDirectory()).thenReturn(false);
+        when(file3.getName()).thenReturn(fileName3);
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(eq(inputDirectory + "/" + fileName3))).thenReturn(bytes);
+
+        when(agent.listFiles(eq(inputDirectory))).thenReturn(new FTPFile[] { file1, file2, file3 });
+
+        List<FtpOperationResult> results = template.retrieveThenMoveAll(inputDirectory, archiveDirectory, handler);
+        assertEquals(2, results.size());
+
+        assertFalse(results.get(0).isSuccess());
+        assertEquals(FtpRetrieveFileException.class, results.get(0).getError().getClass());
+
+        assertTrue(results.get(1).isSuccess());
+        assertNull(results.get(1).getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).listFiles(eq(inputDirectory));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName3));
+        // agent.storeFile(archiveDirectory + "/" + fileName2) should not be
+        // called.
+        verify(agent, times(1)).storeFile(eq(archiveDirectory + "/" + fileName3), any(byte[].class));
+        // agent.deleteFile(inputDirectory + "/" + fileName2) should not be
+        // called.
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(1)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveAllException2() throws Throwable {
+        String inputDirectory = "inputDirectory";
+        String archiveDirectory = "archiveDirectory";
+        String fileName2 = "fileName2";
+        String fileName3 = "fileName3";
+        String message = "messsage";
+
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(anyString())).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        // 1. directory
+        FTPFile file1 = mock(FTPFile.class);
+        when(file1.isDirectory()).thenReturn(true);
+
+        // 2. file (success)
+        FTPFile file2 = mock(FTPFile.class);
+        when(file2.isDirectory()).thenReturn(false);
+        when(file2.getName()).thenReturn(fileName2);
+        doThrow(FtpStoreFileException.class).when(agent).storeFile(eq(archiveDirectory + "/" + fileName2),
+                any(byte[].class));
+
+        // 3. file (success)
+        FTPFile file3 = mock(FTPFile.class);
+        when(file3.isDirectory()).thenReturn(false);
+        when(file3.getName()).thenReturn(fileName3);
+
+        when(agent.listFiles(eq(inputDirectory))).thenReturn(new FTPFile[] { file1, file2, file3 });
+
+        List<FtpOperationResult> results = template.retrieveThenMoveAll(inputDirectory, archiveDirectory, handler);
+        assertEquals(2, results.size());
+
+        assertFalse(results.get(0).isSuccess());
+        assertEquals(FtpStoreFileException.class, results.get(0).getError().getClass());
+
+        assertTrue(results.get(1).isSuccess());
+        assertNull(results.get(1).getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).listFiles(eq(inputDirectory));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).storeFile(eq(archiveDirectory + "/" + fileName2), any(byte[].class));
+        verify(agent, times(1)).storeFile(eq(archiveDirectory + "/" + fileName3), any(byte[].class));
+        // agent.deleteFile(inputDirectory + "/" + fileName2) should not run
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(2)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void retrieveThenMoveAllSuccess() throws Throwable {
+        String inputDirectory = "inputDirectory";
+        String archiveDirectory = "archiveDirectory";
+        String fileName2 = "fileName2";
+        String fileName3 = "fileName3";
+        String message = "messsage";
+
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        when(agent.retrieveFile(anyString())).thenReturn(bytes);
+        FileHandler handler = mock(FileHandler.class);
+        when(handler.handleFile(any(byte[].class))).thenReturn(message);
+
+        // 1. directory
+        FTPFile file1 = mock(FTPFile.class);
+        when(file1.isDirectory()).thenReturn(true);
+
+        // 2. file (success)
+        FTPFile file2 = mock(FTPFile.class);
+        when(file2.isDirectory()).thenReturn(false);
+        when(file2.getName()).thenReturn(fileName2);
+
+        // 3. file (success)
+        FTPFile file3 = mock(FTPFile.class);
+        when(file3.isDirectory()).thenReturn(false);
+        when(file3.getName()).thenReturn(fileName3);
+
+        when(agent.listFiles(eq(inputDirectory))).thenReturn(new FTPFile[] { file1, file2, file3 });
+
+        List<FtpOperationResult> results = template.retrieveThenMoveAll(inputDirectory, archiveDirectory, handler);
+        assertEquals(2, results.size());
+
+        assertTrue(results.get(0).isSuccess());
+        assertNull(results.get(0).getError());
+
+        assertTrue(results.get(1).isSuccess());
+        assertNull(results.get(1).getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).listFiles(eq(inputDirectory));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).storeFile(eq(archiveDirectory + "/" + fileName2), any(byte[].class));
+        verify(agent, times(1)).storeFile(eq(archiveDirectory + "/" + fileName3), any(byte[].class));
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName2));
+        verify(agent, times(1)).deleteFile(eq(inputDirectory + "/" + fileName3));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+
+        verify(handler, times(2)).handleFile(any(byte[].class));
+        verifyNoMoreInteractions(handler);
+    }
+
+    @Test
+    public void storeFileException() throws Throwable {
+        String fileName = "fileName";
+
+        doThrow(FtpStoreFileException.class).when(agent).storeFile(eq(fileName), any(byte[].class));
+
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+        FtpOperationResult result = template.storeFile(fileName, bytes);
+        assertFalse(result.isSuccess());
+        assertEquals(FtpStoreFileException.class, result.getError().getClass());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).storeFile(eq(fileName), any(byte[].class));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
+    }
+
+    @Test
+    public void storeFileSuccess() throws Throwable {
+        String fileName = "fileName";
+        byte[] bytes = new byte[] { 0x11, 0x12 };
+
+        FtpOperationResult result = template.storeFile(fileName, bytes);
+        assertTrue(result.isSuccess());
+        assertNull(result.getError());
+
+        verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).login(eq(username), eq(password));
+        verify(agent, times(1)).storeFile(eq(fileName), any(byte[].class));
+        verify(agent, times(1)).logout();
+        verify(agent, times(1)).disconnect();
+        verifyNoMoreInteractions(agent);
     }
 }

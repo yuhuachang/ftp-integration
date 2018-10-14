@@ -1,125 +1,126 @@
 package com.example.ftpintegration.ftp;
 
-import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 
-import org.apache.commons.net.ftp.FTPClient;
-import org.apache.commons.net.ftp.FTPClientConfig;
 import org.apache.commons.net.ftp.FTPFile;
-import org.apache.commons.net.ftp.FTPReply;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.example.ftpintegration.ftp.exception.FtpConnectionException;
+import com.example.ftpintegration.ftp.exception.FtpLoginException;
+import com.example.ftpintegration.ftp.exception.FtpModeSwitchException;
 
 /**
- * 
+ * Wrap common ftp actions, such as connect, disconnect, login, logout, etc.
+ * into templates and organize common ftp operations as function calls.
  * 
  * @author Yu-Hua Chang
  */
 public class FtpTemplate {
 
-    private static final Logger log = LoggerFactory.getLogger(FtpTemplate.class);
-
     private final FtpServer server;
-    private final FTPClient client;
 
-    public FtpTemplate(FtpServer server, int timeout) {
-        this(new FTPClient(), server, timeout);
-    }
-
-    // for unit test
-    private FtpTemplate(FTPClient client, FtpServer server, int timeout) {
-        server.getClass();
+    public FtpTemplate(FtpServer server) {
         this.server = server;
-
-        this.client = client;
-
-        // Set server type.
-        FTPClientConfig config = new FTPClientConfig(server.getServerType());
-        client.configure(config);
-        client.setConnectTimeout(timeout);
-        client.setControlKeepAliveReplyTimeout(timeout);
-        client.setControlKeepAliveTimeout(timeout);
-        client.setDataTimeout(timeout);
-        client.setDefaultTimeout(timeout);
     }
 
-    private static interface FtpOperation {
-        void execute(FtpAgent op);
+    /**
+     * internal interface that provide simple java lambda execution that
+     * optionally write to the result object.
+     */
+    interface FtpOperation {
+        void execute(final FtpOperationResult result) throws Throwable;
     }
 
-    private void execute(FtpOperation operation) throws FtpException {
-        try {
-            client.connect(server.getHost(), server.getPort());
+    /**
+     * the template to handle ftp connect and disconnect.
+     */
+    class DoWithConnectionTemplate implements FtpOperation {
 
-            int reply = client.getReplyCode();
-            if (log.isDebugEnabled()) {
-                log.debug("connection reply code = {}", reply);
-            }
-            if (FTPReply.isPositiveCompletion(reply)) {
-                // good.
-            } else {
-                String message = String.format("Failed to connect FTP server %s", server);
-                log.error(message);
-                throw new FtpConnectionException(message);
-            }
+        private final FtpOperation op;
 
-            // Enter passive mode
-            client.enterLocalPassiveMode();
-            client.enterRemotePassiveMode();
+        public DoWithConnectionTemplate(FtpOperation op) {
+            this.op = op;
+        }
+
+        @Override
+        public void execute(final FtpOperationResult result) throws Throwable {
+            FtpAgent agent = server.getFtpAgent();
+            try {
+                // enter passive mode (passive mode is compatible to most of the
+                // servers?)
+                agent.connect(server.getHost(), server.getPort());
+                agent.enterPassiveMode();
+
+                // nested call operations...
+                if (op != null) {
+                    op.execute(result);
+                }
+            } catch (FtpConnectionException e) {
+                // set connection error
+                result.setError(e);
+                throw e;
+            } catch (FtpModeSwitchException e) {
+                // set mode switch error
+                result.setError(e);
+                throw e;
+            } catch (Throwable e) {
+                // do nothing. only handle the exceptions we know here.
+                throw e;
+            } finally {
+                agent.disconnect();
+            }
+        }
+    }
+
+    /**
+     * the template to handle ftp login and logout. it is placed inside
+     * connection template usually.
+     */
+    class DoWithLoginTemplate implements FtpOperation {
+
+        private final FtpOperation op;
+
+        public DoWithLoginTemplate(FtpOperation op) {
+            this.op = op;
+        }
+
+        @Override
+        public void execute(final FtpOperationResult result) throws Throwable {
+            FtpAgent agent = server.getFtpAgent();
+            try {
+                agent.login(server.getUsername(), server.getPassword());
+
+                if (op != null) {
+                    op.execute(result);
+                }
+            } catch (FtpLoginException e) {
+                // login error
+                result.setError(e);
+                throw e;
+            } catch (Throwable e) {
+                // do nothing. only handle the exceptions we know here.
+                throw e;
+            } finally {
+                agent.logout();
+            }
+        }
+    }
+
+    /**
+     * Default template that combine connection and login template together.
+     */
+    class DefaultTemplate {
+        public FtpOperationResult run(FtpOperation op) {
+            final FtpOperationResult result = new FtpOperationResult();
+
+            DoWithLoginTemplate loginTemplate = new DoWithLoginTemplate(op);
+            DoWithConnectionTemplate connectionTemplate = new DoWithConnectionTemplate(loginTemplate);
 
             try {
-                if (client.login(server.getUsername(), server.getPassword())) {
-                    // good
-                } else {
-                    // login failed.
-                    String message = String.format("Failed to login FTP server %s", server);
-                    log.error(message);
-                    throw new FtpLoginException(message);
-                }
-
-                // create agent
-                FtpAgent op = new FtpAgent(client);
-
-                // execute operation
-                // the execution method can only throw FtpException for any ftp related errors.
-                // any other errors (file content related...) should be handled properly and
-                // never throw out.
-                operation.execute(op);
-            } catch (IOException e) {
-                String message = "FTP login error.";
-                log.error(message, e);
-                throw new FtpLoginException(message, e);
-            } finally {
-                // logout
-                if (client.logout()) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Logout FTP");
-                    }
-                } else {
-                    log.warn("Failed to logout FTP");
-                }
+                connectionTemplate.execute(result);
+            } catch (Throwable e) {
+                result.setError(e);
             }
-        } catch (FtpException e) {
-            // connection or login error (from this class),
-            // or other ftp error (from ftp execution).
-            throw e;
-        } catch (IOException e) {
-            String message = "Error on open FTP connection.";
-            log.error(message, e);
-            throw new FtpConnectionException(message, e);
-        } finally {
-            if (client.isConnected()) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Disconnect FTP");
-                }
-                try {
-                    client.disconnect();
-                } catch (IOException e) {
-                    log.warn("Error on closing FTP connection.", e);
-                    // nothing we can do here...
-                }
-            }
+            return result;
         }
     }
 
@@ -131,35 +132,46 @@ public class FtpTemplate {
      * @return
      */
     public FtpOperationResult retrieveFile(String fileName, FileHandler handler) {
-        final FtpOperationResult result = new FtpOperationResult();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        byte[] bytes = op.retrieveFile(fileName);
-                        String message = handler.handleFile(bytes);
-
-                        // report success
-                        result.setFileName(fileName);
-                        result.setSuccess(true);
-                        result.setMessage(message);
-                    } catch (FtpException e) {
-                        result.setError(e);
-                    } catch (Throwable e) {
-                        result.setError(e);
-                    }
-                }
-            });
-        } catch (FtpException e) {
-            result.setError(e);
-        }
-        return result;
+        return new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            byte[] bytes = agent.retrieveFile(fileName);
+            String message = handler.handleFile(bytes);
+            if (message == null) {
+                result.setMessage(String.format("Download file %s success.", fileName));
+            } else {
+                result.setMessage(message);
+            }
+            result.setSuccess(true);
+        });
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) from input directory
-     * and move it to the archive location after a successful handling.
+     * Retrieve (download) file content as byte array (binary) from input
+     * directory and delete the source file after a successful handling.
+     * 
+     * @param fileName
+     * @param handler
+     * @return
+     */
+    public FtpOperationResult retrieveThenDelete(String fileName, FileHandler handler) {
+        return new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            byte[] bytes = agent.retrieveFile(fileName);
+            String message = handler.handleFile(bytes);
+            agent.deleteFile(fileName);
+            if (message == null) {
+                result.setMessage(String.format("Process file %s success.", fileName));
+            } else {
+                result.setMessage(message);
+            }
+            result.setSuccess(true);
+        });
+    }
+
+    /**
+     * Retrieve (download) file content as byte array (binary) from input
+     * directory and move it to the archive location after a successful
+     * handling.
      * 
      * @param inputFileName
      * @param archiveFileName
@@ -167,179 +179,105 @@ public class FtpTemplate {
      * @return
      */
     public FtpOperationResult retrieveThenMove(String inputFileName, String archiveFileName, FileHandler handler) {
-        final FtpOperationResult result = new FtpOperationResult();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        byte[] bytes = op.retrieveFile(inputFileName);
-                        String message = handler.handleFile(bytes);
-                        op.storeFile(archiveFileName, bytes);
-                        op.deleteFile(inputFileName);
-
-                        // report success
-                        result.setFileName(inputFileName);
-                        result.setSuccess(true);
-                        result.setMessage(message);
-                    } catch (FtpException e) {
-                        result.setError(e);
-                    } catch (Throwable e) {
-                        result.setError(e);
-                    }
-                }
-            });
-        } catch (FtpException e) {
-            result.setError(e);
-        }
-        return result;
+        return new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            byte[] bytes = agent.retrieveFile(inputFileName);
+            String message = handler.handleFile(bytes);
+            agent.storeFile(archiveFileName, bytes);
+            agent.deleteFile(inputFileName);
+            if (message == null) {
+                result.setMessage(String.format("Process file %s success.", inputFileName));
+            } else {
+                result.setMessage(message);
+            }
+            result.setSuccess(true);
+        });
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) from input directory
-     * and delete the source file after a successful handling.
+     * Retrieve (download) file content as byte array (binary) and delete the
+     * source file after a successful handling for each file in the input
+     * directory. Continue next file if one has error.
      * 
-     * @param fileName
+     * @param inputDirectory
      * @param handler
      * @return
      */
-    public FtpOperationResult retrieveThenDelete(String fileName, FileHandler handler) {
-        final FtpOperationResult result = new FtpOperationResult();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        byte[] bytes = op.retrieveFile(fileName);
-                        String message = handler.handleFile(bytes);
-                        op.deleteFile(fileName);
-
-                        // report success
-                        result.setFileName(fileName);
-                        result.setSuccess(true);
-                        result.setMessage(message);
-                    } catch (FtpException e) {
-                        result.setError(e);
-                    } catch (Throwable e) {
-                        result.setError(e);
-                    }
+    public List<FtpOperationResult> retrieveThenDeleteAll(String inputDirectory, FileHandler handler) {
+        List<FtpOperationResult> results = new LinkedList<>();
+        new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            FTPFile[] files = agent.listFiles(inputDirectory);
+            for (FTPFile file : files) {
+                String fileName = file.getName();
+                if (file.isDirectory()) {
+                    continue;
                 }
-            });
-        } catch (FtpException e) {
-            result.setError(e);
-        }
-        return result;
+                String inputFileName = inputDirectory + "/" + fileName;
+
+                FtpOperationResult r = new FtpOperationResult();
+                try {
+                    byte[] bytes = agent.retrieveFile(inputFileName);
+                    String message = handler.handleFile(bytes);
+                    agent.deleteFile(inputFileName);
+                    if (message == null) {
+                        r.setMessage(String.format("Process file %s success.", inputFileName));
+                    } else {
+                        r.setMessage(message);
+                    }
+                    r.setSuccess(true);
+                } catch (Throwable e) {
+                    r.setError(e);
+                }
+                results.add(r);
+            }
+        });
+        return results;
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) and move it to the
-     * archive location after a successful handling for each file in the input
-     * directory. Continue next file if one has error.
+     * Retrieve (download) file content as byte array (binary) and move it to
+     * the archive location after a successful handling for each file in the
+     * input directory. Continue next file if one has error.
      * 
      * @param inputDirectory
      * @param archiveDirectory
      * @param handler
+     * @return
      */
-    public void retrieveThenMoveAll(String inputDirectory, String archiveDirectory, FileHandler handler) {
-        final List<FtpOperationResult> results = new LinkedList<>();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        FTPFile[] files = op.listFiles(inputDirectory);
-                        for (FTPFile file : files) {
-                            String fileName = file.getName();
-                            if (file.isDirectory()) {
-                                continue;
-                            }
-                            String inputFileName = inputDirectory + "/" + fileName;
-                            String archiveFileName = archiveDirectory + "/" + fileName;
-
-                            FtpOperationResult result = new FtpOperationResult();
-                            try {
-                                byte[] bytes = op.retrieveFile(inputFileName);
-                                String message = handler.handleFile(bytes);
-                                op.storeFile(archiveFileName, bytes);
-                                op.deleteFile(inputFileName);
-
-                                // report success
-                                result.setFileName(inputFileName);
-                                result.setSuccess(true);
-                                result.setMessage(message);
-                            } catch (FtpException e) {
-                                result.setError(e);
-                            } catch (Throwable e) {
-                                result.setError(e);
-                            }
-                            results.add(result);
-                        }
-                    } catch (FtpException e) {
-                        FtpOperationResult result = new FtpOperationResult();
-                        result.setError(e);
-                        results.add(result);
-                    }
+    public List<FtpOperationResult> retrieveThenMoveAll(String inputDirectory, String archiveDirectory,
+            FileHandler handler) {
+        List<FtpOperationResult> results = new LinkedList<>();
+        new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            FTPFile[] files = agent.listFiles(inputDirectory);
+            for (FTPFile file : files) {
+                String fileName = file.getName();
+                if (file.isDirectory()) {
+                    continue;
                 }
-            });
-        } catch (FtpException e) {
-            FtpOperationResult result = new FtpOperationResult();
-            result.setError(e);
-            results.add(result);
-        }
-    }
+                String inputFileName = inputDirectory + "/" + fileName;
+                String archiveFileName = archiveDirectory + "/" + fileName;
 
-    /**
-     * Retrieve (download) file content as byte array (binary) and delete the source
-     * file after a successful handling for each file in the input directory.
-     * Continue next file if one has error.
-     * 
-     * @param inputDirectory
-     * @param handler
-     */
-    public void retrieveThenDeleteAll(String inputDirectory, FileHandler handler) {
-        final List<FtpOperationResult> results = new LinkedList<>();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        FTPFile[] files = op.listFiles(inputDirectory);
-                        for (FTPFile file : files) {
-                            String fileName = file.getName();
-                            if (file.isDirectory()) {
-                                continue;
-                            }
-                            String inputFileName = inputDirectory + "/" + fileName;
-
-                            FtpOperationResult result = new FtpOperationResult();
-                            try {
-                                byte[] bytes = op.retrieveFile(inputFileName);
-                                String message = handler.handleFile(bytes);
-                                op.deleteFile(inputFileName);
-
-                                // report success
-                                result.setFileName(inputFileName);
-                                result.setSuccess(true);
-                                result.setMessage(message);
-                            } catch (FtpException e) {
-                                result.setError(e);
-                            } catch (Throwable e) {
-                                result.setError(e);
-                            }
-                            results.add(result);
-                        }
-                    } catch (FtpException e) {
-                        FtpOperationResult result = new FtpOperationResult();
-                        result.setError(e);
-                        results.add(result);
+                FtpOperationResult r = new FtpOperationResult();
+                try {
+                    byte[] bytes = agent.retrieveFile(inputFileName);
+                    String message = handler.handleFile(bytes);
+                    agent.storeFile(archiveFileName, bytes);
+                    agent.deleteFile(inputFileName);
+                    if (message == null) {
+                        r.setMessage(String.format("Process file %s success.", inputFileName));
+                    } else {
+                        r.setMessage(message);
                     }
+                    r.setSuccess(true);
+                } catch (Throwable e) {
+                    r.setError(e);
                 }
-            });
-        } catch (FtpException e) {
-            FtpOperationResult result = new FtpOperationResult();
-            result.setError(e);
-            results.add(result);
-        }
+                results.add(r);
+            }
+        });
+        return results;
     }
 
     /**
@@ -350,26 +288,11 @@ public class FtpTemplate {
      * @return
      */
     public FtpOperationResult storeFile(String fileName, byte[] bytes) {
-        final FtpOperationResult result = new FtpOperationResult();
-        try {
-            execute(new FtpOperation() {
-                @Override
-                public void execute(FtpAgent op) {
-                    try {
-                        op.storeFile(fileName, bytes);
-
-                        // report success
-                        result.setFileName(fileName);
-                        result.setSuccess(true);
-                        result.setMessage("Store File Success");
-                    } catch (FtpException e) {
-                        result.setError(e);
-                    }
-                }
-            });
-        } catch (FtpException e) {
-            result.setError(e);
-        }
-        return result;
+        return new DefaultTemplate().run(result -> {
+            FtpAgent agent = server.getFtpAgent();
+            agent.storeFile(fileName, bytes);
+            result.setMessage(String.format("Upload file %s success.", fileName));
+            result.setSuccess(true);
+        });
     }
 }

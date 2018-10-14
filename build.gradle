@@ -30,8 +30,15 @@ dependencies {
     compile('org.apache.tika:tika-parsers:1.18')
     compile('org.apache.commons:commons-csv:1.5')
     compile('org.apache.poi:poi:4.0.0')
-    compile('org.springframework.boot:spring-boot-starter-actuator')
+    //compile('org.springframework.boot:spring-boot-starter-actuator')
     //compile('org.springframework.cloud:spring-cloud-starter-aws')
-    compile('io.micrometer:micrometer-registry-cloudwatch:1.0.6')
+    //compile('io.micrometer:micrometer-registry-cloudwatch:1.0.6')
+    
+    //compile group: 'org.springframework.boot', name: 'spring-boot-starter'
+    testImplementation('org.junit.jupiter:junit-jupiter-api:5.2.0')
+    testCompile('org.junit.jupiter:junit-jupiter-params:5.2.0')
+    testRuntime('org.junit.jupiter:junit-jupiter-engine:5.2.0')
+    testCompile "org.mockito:mockito-core:2.+"
+    testCompile('org.mockito:mockito-junit-jupiter:2.18.3')
     testCompile('org.springframework.boot:spring-boot-starter-test')
 }

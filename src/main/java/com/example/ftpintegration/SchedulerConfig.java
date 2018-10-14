@@ -16,7 +16,7 @@ import com.example.ftpintegration.processor.RecordProcessor;
 import com.example.ftpintegration.processor.impl.CSVFileProcessor;
 import com.example.ftpintegration.processor.impl.ExcelFileProcessor;
 
-import io.micrometer.core.instrument.MeterRegistry;
+//import io.micrometer.core.instrument.MeterRegistry;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,13 +35,6 @@ public class SchedulerConfig {
 
     private static final int PROCESS_TIMEOUT = 4000;
     private static final int PROCESS_DELAY = 1000;
-
-    private final AtomicInteger listFileCount;
-
-    @Autowired
-    public SchedulerConfig(MeterRegistry meterRegistry) {
-        listFileCount = meterRegistry.gauge("luckies.current", new AtomicInteger(0));
-    }
 
     /**
      * Limited to 2 thread for scheduler. (if a scheduler process does not return,
