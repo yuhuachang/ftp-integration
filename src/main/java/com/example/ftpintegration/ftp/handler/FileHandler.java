@@ -1,4 +1,4 @@
-package com.example.ftpintegration.ftp;
+package com.example.ftpintegration.ftp.handler;
 
 /**
  * Handle input binary file content and return processing message (optional).

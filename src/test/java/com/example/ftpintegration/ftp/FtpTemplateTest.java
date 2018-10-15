@@ -12,6 +12,7 @@ import com.example.ftpintegration.ftp.exception.FtpLoginException;
 import com.example.ftpintegration.ftp.exception.FtpModeSwitchException;
 import com.example.ftpintegration.ftp.exception.FtpRetrieveFileException;
 import com.example.ftpintegration.ftp.exception.FtpStoreFileException;
+import com.example.ftpintegration.ftp.handler.FileHandler;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;

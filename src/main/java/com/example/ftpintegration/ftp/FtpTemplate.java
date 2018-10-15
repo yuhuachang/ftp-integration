@@ -7,6 +7,7 @@ import org.apache.commons.net.ftp.FTPFile;
 import com.example.ftpintegration.ftp.exception.FtpConnectionException;
 import com.example.ftpintegration.ftp.exception.FtpLoginException;
 import com.example.ftpintegration.ftp.exception.FtpModeSwitchException;
+import com.example.ftpintegration.ftp.handler.FileHandler;
 
 /**
  * Wrap common ftp actions, such as connect, disconnect, login, logout, etc.

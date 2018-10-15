@@ -1,6 +1,6 @@
 buildscript {
     ext {
-        springBootVersion = '2.0.4.RELEASE'
+        springBootVersion = '2.0.5.RELEASE'
     }
     repositories {
         mavenCentral()
@@ -25,16 +25,15 @@ repositories {
 
 
 dependencies {
+    compile('org.springframework.boot:spring-boot-starter-web')
+
     compile('commons-net:commons-net:3.6')
     compile('org.apache.tika:tika-core:1.18')
     compile('org.apache.tika:tika-parsers:1.18')
     compile('org.apache.commons:commons-csv:1.5')
     compile('org.apache.poi:poi:4.0.0')
-    //compile('org.springframework.boot:spring-boot-starter-actuator')
-    //compile('org.springframework.cloud:spring-cloud-starter-aws')
-    //compile('io.micrometer:micrometer-registry-cloudwatch:1.0.6')
-    
-    //compile group: 'org.springframework.boot', name: 'spring-boot-starter'
+    compile('org.apache.poi:poi-ooxml:4.0.0')
+
     testImplementation('org.junit.jupiter:junit-jupiter-api:5.2.0')
     testCompile('org.junit.jupiter:junit-jupiter-params:5.2.0')
     testRuntime('org.junit.jupiter:junit-jupiter-engine:5.2.0')

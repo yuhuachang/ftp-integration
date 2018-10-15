@@ -1,4 +1,4 @@
-package com.example.ftpintegration.processor;
+package com.example.ftpintegration.ftp.handler;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -8,6 +8,13 @@ import org.apache.tika.parser.txt.CharsetMatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Utility class to "guess" the encoding of a plain text file with UTF-8 as the
+ * default charset.
+ * 
+ * @author yu
+ *
+ */
 public class CharsetDetectionUtils {
 
     private static final Logger log = LoggerFactory.getLogger(CharsetDetectionUtils.class);
@@ -22,16 +29,7 @@ public class CharsetDetectionUtils {
         }
         CharsetDetector detector = new CharsetDetector();
         detector.setText(content);
-        
-        
-//        CharsetMatch[] matches = detector.detectAll();
-//        for (CharsetMatch m : matches) {
-//            System.err.println(m);
-//        }
-//        for (String s : CharsetDetector.getAllDetectableCharsets()) {
-//            System.err.println(s);
-//        }
-        
+
         CharsetMatch matchedCharset = detector.detect();
         if (matchedCharset == null) {
             if (log.isDebugEnabled()) {

@@ -1,4 +1,4 @@
-package com.example.ftpintegration.processor;
+package com.example.ftpintegration.ftp.handler;
 
 import static org.junit.Assert.*;
 
@@ -6,6 +6,8 @@ import java.io.UnsupportedEncodingException;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
+
+import com.example.ftpintegration.ftp.handler.CharsetDetectionUtils;
 
 public class CharsetDetectionUtilsTest {
 
