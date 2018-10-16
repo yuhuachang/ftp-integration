@@ -24,8 +24,8 @@ public class FtpTemplate {
     }
 
     /**
-     * internal interface that provide simple java lambda execution that
-     * optionally write to the result object.
+     * internal interface that provide simple java lambda execution that optionally
+     * write to the result object.
      */
     interface FtpOperation {
         void execute(final FtpOperationResult result) throws Throwable;
@@ -46,10 +46,7 @@ public class FtpTemplate {
         public void execute(final FtpOperationResult result) throws Throwable {
             FtpAgent agent = server.getFtpAgent();
             try {
-                // enter passive mode (passive mode is compatible to most of the
-                // servers?)
                 agent.connect(server.getHost(), server.getPort());
-                agent.enterPassiveMode();
 
                 // nested call operations...
                 if (op != null) {
@@ -73,8 +70,8 @@ public class FtpTemplate {
     }
 
     /**
-     * the template to handle ftp login and logout. it is placed inside
-     * connection template usually.
+     * the template to handle ftp login and logout. it is placed inside connection
+     * template usually.
      */
     class DoWithLoginTemplate implements FtpOperation {
 
@@ -90,6 +87,11 @@ public class FtpTemplate {
             try {
                 agent.login(server.getUsername(), server.getPassword());
 
+                if (server.isPassiveMode()) {
+                    agent.enterPassiveMode();
+                }
+
+                // nested call operations...
                 if (op != null) {
                     op.execute(result);
                 }
@@ -147,8 +149,8 @@ public class FtpTemplate {
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) from input
-     * directory and delete the source file after a successful handling.
+     * Retrieve (download) file content as byte array (binary) from input directory
+     * and delete the source file after a successful handling.
      * 
      * @param fileName
      * @param handler
@@ -170,9 +172,8 @@ public class FtpTemplate {
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) from input
-     * directory and move it to the archive location after a successful
-     * handling.
+     * Retrieve (download) file content as byte array (binary) from input directory
+     * and move it to the archive location after a successful handling.
      * 
      * @param inputFileName
      * @param archiveFileName
@@ -196,9 +197,9 @@ public class FtpTemplate {
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) and delete the
-     * source file after a successful handling for each file in the input
-     * directory. Continue next file if one has error.
+     * Retrieve (download) file content as byte array (binary) and delete the source
+     * file after a successful handling for each file in the input directory.
+     * Continue next file if one has error.
      * 
      * @param inputDirectory
      * @param handler
@@ -237,9 +238,9 @@ public class FtpTemplate {
     }
 
     /**
-     * Retrieve (download) file content as byte array (binary) and move it to
-     * the archive location after a successful handling for each file in the
-     * input directory. Continue next file if one has error.
+     * Retrieve (download) file content as byte array (binary) and move it to the
+     * archive location after a successful handling for each file in the input
+     * directory. Continue next file if one has error.
      * 
      * @param inputDirectory
      * @param archiveDirectory

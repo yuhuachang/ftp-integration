@@ -2,18 +2,9 @@ package com.example.ftpintegration.ftp;
 
 public class FtpOperationResult {
 
-    private String fileName;
     private boolean isSuccess;
     private String message;
     private Throwable error;
-
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
 
     public boolean isSuccess() {
         return isSuccess;

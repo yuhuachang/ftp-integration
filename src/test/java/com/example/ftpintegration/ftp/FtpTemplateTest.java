@@ -27,18 +27,20 @@ public class FtpTemplateTest {
     private String username = "mock-user";
     private String password = "mock-password";
 
+    private FtpServer server;
     private FtpAgent agent;
     private FtpTemplate template;
 
     @Before
     public void before() {
         agent = mock(FtpAgent.class);
-        FtpServer server = mock(FtpServer.class);
+        server = mock(FtpServer.class);
         when(server.getFtpAgent()).thenReturn(agent);
         when(server.getHost()).thenReturn(host);
         when(server.getPort()).thenReturn(port);
         when(server.getUsername()).thenReturn(username);
         when(server.getPassword()).thenReturn(password);
+        when(server.isPassiveMode()).thenReturn(false);
         template = new FtpTemplate(server);
     }
 
@@ -48,7 +50,6 @@ public class FtpTemplateTest {
         tmp.execute(null);
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).disconnect();
         verifyNoMoreInteractions(agent);
     }
@@ -71,24 +72,6 @@ public class FtpTemplateTest {
     }
 
     @Test
-    public void connectionTemplateModeSwitchException() throws Throwable {
-        doThrow(FtpModeSwitchException.class).when(agent).enterPassiveMode();
-
-        FtpTemplate.DoWithConnectionTemplate tmp = template.new DoWithConnectionTemplate(null);
-        FtpOperationResult result = new FtpOperationResult();
-        assertThrows(FtpModeSwitchException.class, () -> {
-            tmp.execute(result);
-        });
-        assertFalse(result.isSuccess());
-        assertEquals(FtpModeSwitchException.class, result.getError().getClass());
-
-        verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
-        verify(agent, times(1)).disconnect();
-        verifyNoMoreInteractions(agent);
-    }
-
-    @Test
     public void connectionTemplateOperationError() throws Throwable {
         FtpOperationResult result = new FtpOperationResult();
         FtpTemplate.FtpOperation op = mock(FtpTemplate.FtpOperation.class);
@@ -102,7 +85,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).disconnect();
         verifyNoMoreInteractions(agent);
     }
@@ -170,6 +152,7 @@ public class FtpTemplateTest {
 
     @Test
     public void defaultTemplateModeSwitchException() throws Throwable {
+        when(server.isPassiveMode()).thenReturn(true);
         doThrow(FtpModeSwitchException.class).when(agent).enterPassiveMode();
 
         FtpOperationResult result = new FtpOperationResult();
@@ -180,7 +163,9 @@ public class FtpTemplateTest {
         assertEquals(FtpModeSwitchException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
+        verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).enterPassiveMode();
+        verify(agent, times(1)).logout();
         verify(agent, times(1)).disconnect();
         verifyNoMoreInteractions(agent);
     }
@@ -197,7 +182,6 @@ public class FtpTemplateTest {
         assertEquals(FtpLoginException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).logout();
         verify(agent, times(1)).disconnect();
@@ -216,7 +200,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).logout();
         verify(agent, times(1)).disconnect();
@@ -234,7 +217,6 @@ public class FtpTemplateTest {
         assertEquals(Throwable.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).logout();
         verify(agent, times(1)).disconnect();
@@ -254,7 +236,6 @@ public class FtpTemplateTest {
         assertEquals(IOException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).logout();
         verify(agent, times(1)).disconnect();
@@ -276,7 +257,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(fileName));
         verify(agent, times(1)).logout();
@@ -303,7 +283,6 @@ public class FtpTemplateTest {
         assertEquals(Throwable.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(fileName));
         verify(agent, times(1)).logout();
@@ -325,7 +304,6 @@ public class FtpTemplateTest {
         assertEquals(FtpRetrieveFileException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(fileName));
         // agent.deleteFile(fileName) should not be not called.
@@ -351,7 +329,6 @@ public class FtpTemplateTest {
         assertEquals(Throwable.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(fileName));
         // agent.deleteFile(fileName) should not be not called.
@@ -378,7 +355,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(fileName));
         verify(agent, times(1)).deleteFile(eq(fileName));
@@ -402,7 +378,6 @@ public class FtpTemplateTest {
         assertEquals(FtpRetrieveFileException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(inputFileName));
         // agent.storeFile(...) should not be called.
@@ -428,7 +403,6 @@ public class FtpTemplateTest {
         assertEquals(Throwable.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(inputFileName));
         // agent.storeFile(...) should not be called.
@@ -459,7 +433,6 @@ public class FtpTemplateTest {
         assertEquals(FtpStoreFileException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(inputFileName));
         verify(agent, times(1)).storeFile(eq(archiveFileName), any(byte[].class));
@@ -488,7 +461,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).retrieveFile(eq(inputFileName));
         verify(agent, times(1)).storeFile(eq(archiveFileName), any(byte[].class));
@@ -540,7 +512,6 @@ public class FtpTemplateTest {
         assertNull(results.get(1).getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).listFiles(eq(inputDirectory));
         verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
@@ -593,7 +564,6 @@ public class FtpTemplateTest {
         assertNull(results.get(1).getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).listFiles(eq(inputDirectory));
         verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
@@ -648,7 +618,6 @@ public class FtpTemplateTest {
         assertNull(results.get(1).getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).listFiles(eq(inputDirectory));
         verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
@@ -708,7 +677,6 @@ public class FtpTemplateTest {
         assertNull(results.get(1).getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).listFiles(eq(inputDirectory));
         verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
@@ -764,7 +732,6 @@ public class FtpTemplateTest {
         assertNull(results.get(1).getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).listFiles(eq(inputDirectory));
         verify(agent, times(1)).retrieveFile(eq(inputDirectory + "/" + fileName2));
@@ -793,7 +760,6 @@ public class FtpTemplateTest {
         assertEquals(FtpStoreFileException.class, result.getError().getClass());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).storeFile(eq(fileName), any(byte[].class));
         verify(agent, times(1)).logout();
@@ -811,7 +777,6 @@ public class FtpTemplateTest {
         assertNull(result.getError());
 
         verify(agent, times(1)).connect(eq(host), eq(port));
-        verify(agent, times(1)).enterPassiveMode();
         verify(agent, times(1)).login(eq(username), eq(password));
         verify(agent, times(1)).storeFile(eq(fileName), any(byte[].class));
         verify(agent, times(1)).logout();

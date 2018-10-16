@@ -71,7 +71,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).connect(anyString(), anyInt());
-        verify(client, times(1)).getReplyCode();
+        verify(client, times(2)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -85,6 +86,8 @@ public class FtpAgentTest {
 
         verify(client, times(1)).isConnected();
         verify(client, times(1)).disconnect();
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -97,7 +100,6 @@ public class FtpAgentTest {
             agent.enterPassiveMode();
         });
 
-        verify(client, times(1)).enterLocalPassiveMode();
         verify(client, times(1)).enterRemotePassiveMode();
         verifyNoMoreInteractions(client);
     }
@@ -111,8 +113,23 @@ public class FtpAgentTest {
             agent.enterPassiveMode();
         });
 
-        verify(client, times(1)).enterLocalPassiveMode();
         verify(client, times(1)).enterRemotePassiveMode();
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
+        verifyNoMoreInteractions(client);
+    }
+
+    @Test
+    public void enterPassiveModeSuccess() throws IOException, FtpModeSwitchException {
+        when(client.enterRemotePassiveMode()).thenReturn(true);
+
+        FtpAgent agent = new FtpAgent(client);
+        agent.enterPassiveMode();
+
+        verify(client, times(1)).enterRemotePassiveMode();
+        verify(client, times(1)).enterLocalPassiveMode();
+        verify(client, times(1)).getLocalAddress();
+        verify(client, times(1)).getLocalPort();
         verifyNoMoreInteractions(client);
     }
 
@@ -139,6 +156,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).login(anyString(), anyString());
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -161,6 +180,8 @@ public class FtpAgentTest {
         agent.logout();
 
         verify(client, times(1)).logout();
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -204,7 +225,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).listFiles(eq(pathname));
-        verify(client, times(1)).getReplyCode();
+        verify(client, times(2)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -263,6 +285,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).retrieveFile(eq(fileName), any(OutputStream.class));
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -315,6 +339,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).storeFile(eq(fileName), any(InputStream.class));
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 
@@ -355,6 +381,8 @@ public class FtpAgentTest {
         });
 
         verify(client, times(1)).deleteFile(eq(fileName));
+        verify(client, times(1)).getReplyCode();
+        verify(client, times(1)).getReplyString();
         verifyNoMoreInteractions(client);
     }
 }

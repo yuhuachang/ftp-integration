@@ -36,6 +36,12 @@ public class FtpAgent {
         this.client = client;
     }
 
+    private String getLastReply(String msg) {
+        int code = client.getReplyCode();
+        String str = client.getReplyString();
+        return String.format("%s (ReplyCode=%d ReplyString=%s)", msg, code, str);
+    }
+
     public void connect(String hostname, int port) throws FtpConnectionException {
         log.info(String.format("Connect to %s:%d", hostname, port));
         try {
@@ -48,7 +54,7 @@ public class FtpAgent {
         if (FTPReply.isPositiveCompletion(reply)) {
             // good.
         } else {
-            String msg = String.format("Failed to connect %s:%d", hostname, port);
+            String msg = getLastReply(String.format("Failed to connect %s:%d", hostname, port));
             log.error(msg);
             throw new FtpConnectionException(msg);
         }
@@ -60,19 +66,21 @@ public class FtpAgent {
             try {
                 client.disconnect();
             } catch (IOException e) {
-                log.warn("Disconnect failed.", e);
+                log.warn(getLastReply("Disconnect failed."), e);
             }
         }
     }
 
     public void enterPassiveMode() throws FtpModeSwitchException {
         log.info("Enter passive mode");
-        client.enterLocalPassiveMode();
         try {
             if (client.enterRemotePassiveMode()) {
-                // good.
+                client.enterLocalPassiveMode();
+                String localAddress = "" + client.getLocalAddress();
+                int localPort = client.getLocalPort();
+                log.info(String.format("LocalAddress: %s:%d", localAddress, localPort));
             } else {
-                String msg = "Unable to enter remote passive mode.";
+                String msg = getLastReply("Unable to enter remote passive mode.");
                 log.error(msg);
                 throw new FtpModeSwitchException(msg);
             }
@@ -88,7 +96,7 @@ public class FtpAgent {
             if (client.login(username, password)) {
                 // good
             } else {
-                String msg = String.format("Failed to login with %s/%s", username, password);
+                String msg = getLastReply(String.format("Failed to login with %s/%s.", username, password));
                 log.error(msg);
                 throw new FtpLoginException(msg);
             }
@@ -104,7 +112,7 @@ public class FtpAgent {
             if (client.logout()) {
                 // good
             } else {
-                log.warn("Logout unsuccessful");
+                log.warn(getLastReply("Logout unsuccessful."));
             }
         } catch (IOException e) {
             log.warn("Logout error", e);
@@ -135,7 +143,7 @@ public class FtpAgent {
             log.warn(e.getMessage(), e);
             throw new FtpListFilesException(e);
         }
-        String msg = String.format("Unsuccessful ftp command on listing path: %s", pathname);
+        String msg = getLastReply("listFiles failed.");
         log.warn(msg);
         throw new FtpListFilesException(msg);
     }
@@ -154,6 +162,10 @@ public class FtpAgent {
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             if (client.retrieveFile(fileName, outputStream)) {
                 bytes = outputStream.toByteArray();
+            } else {
+                String msg = getLastReply("retrieveFile failed.");
+                log.warn(msg);
+                throw new FtpRetrieveFileException(msg);
             }
         } catch (IOException e) {
             log.warn(e.getMessage(), e);
@@ -182,7 +194,7 @@ public class FtpAgent {
             if (client.storeFile(fileName, inputStream)) {
                 // good.
             } else {
-                String msg = String.format("Store file %s not success.", fileName);
+                String msg = getLastReply("storeFile failed.");
                 log.warn(msg);
                 throw new FtpStoreFileException(msg);
             }
@@ -205,7 +217,7 @@ public class FtpAgent {
             if (client.deleteFile(fileName)) {
                 // good.
             } else {
-                String msg = String.format("Delete file %s not success.", fileName);
+                String msg = getLastReply("deleteFile failed.");
                 log.warn(msg);
                 throw new FtpDeleteFileException(msg);
             }
